@@ -1,0 +1,125 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "App user profile (customer or provider)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Firebase Auth UID" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 50 },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["customer", "provider", "admin"] },
+        "skills": { "type": "array", "description": "Only for providers" },
+        "rating": { "type": "number", "description": "Average star rating" },
+        "completedJobs": { "type": "number" },
+        "isVerified": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "email", "role", "createdAt"]
+    },
+    "ServiceRequest": {
+      "title": "Service Request",
+      "description": "A hiring request from a customer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "category": { "type": "string" },
+        "location": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "voiceNoteUrl": { "type": "string" },
+        "initialOfferPKR": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "negotiating", "in_progress", "completed", "cancelled"] },
+        "assignedProviderId": { "type": "string" },
+        "finalPricePKR": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "customerId", "category", "location", "initialOfferPKR", "status", "createdAt"]
+    },
+    "Negotiation": {
+      "title": "Negotiation",
+      "description": "An offer or counter-offer between provider and customer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "requestId": { "type": "string" },
+        "providerId": { "type": "string" },
+        "offerPKR": { "type": "number" },
+        "message": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "requestId", "providerId", "offerPKR", "createdAt"]
+    },
+    "CivicIssue": {
+      "title": "Civic Issue",
+      "description": "A community grievance report",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "creatorId": { "type": "string" },
+        "title": { "type": "string", "minLength": 5, "maxLength": 100 },
+        "description": { "type": "string", "minLength": 20, "maxLength": 2000 },
+        "category": { "type": "string", "enum": ["Roads", "Water", "Electricity", "Waste", "Other"] },
+        "photoUrl": { "type": "string" },
+        "upvotesCount": { "type": "number" },
+        "status": { "type": "string", "enum": ["posted", "escalated", "resolved"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "creatorId", "title", "description", "category", "upvotesCount", "status", "createdAt"]
+    },
+    "Upvote": {
+      "title": "Upvote",
+      "description": "An upvote on a civic issue",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User notifications for job updates and civic escalations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string", "maxLength": 100 },
+        "message": { "type": "string", "maxLength": 500 },
+        "type": { "type": "string", "enum": ["job_status", "civic_escalation"] },
+        "referenceId": { "type": "string", "description": "ID of the related ServiceRequest or CivicIssue" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "title", "message", "type", "referenceId", "read", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/users/{userId}/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User notifications"
+    },
+    "/service_requests/{requestId}": {
+      "schema": "ServiceRequest",
+      "description": "Hiring requests"
+    },
+    "/service_requests/{requestId}/negotiations/{negotiationId}": {
+      "schema": "Negotiation",
+      "description": "Offers for a request"
+    },
+    "/civic_issues/{issueId}": {
+      "schema": "CivicIssue",
+      "description": "Community grievances"
+    },
+    "/civic_issues/{issueId}/upvotes/{userId}": {
+      "schema": "Upvote",
+      "description": "Upvotes for issues"
+    }
+  }
+}

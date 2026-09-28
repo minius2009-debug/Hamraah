@@ -1,0 +1,182 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'minius2009@gmail.com'
+      );
+    }
+
+    function isEmailVerified() {
+      return request.auth.token.email_verified == true;
+    }
+
+    // Entity Validations
+    function isValidUser(data, isUpdate) {
+      let requiredKeys = ['id', 'name', 'email', 'role', 'createdAt'];
+      let allowedKeys = ['id', 'name', 'email', 'role', 'skills', 'rating', 'completedJobs', 'bio', 'experience', 'portfolio', 'createdAt', 'isVerified'];
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().hasOnly(allowedKeys) &&
+             data.id == request.auth.uid &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+             data.email is string &&
+             data.role in ['customer', 'provider', 'admin'] &&
+             (isUpdate ? data.createdAt == existing().createdAt : data.createdAt == request.time);
+    }
+
+    function isValidServiceRequest(data) {
+      let requiredKeys = ['id', 'customerId', 'category', 'location', 'initialOfferPKR', 'status', 'createdAt'];
+      let allowedKeys = ['id', 'customerId', 'category', 'location', 'description', 'voiceNoteUrl', 'initialOfferPKR', 'status', 'assignedProviderId', 'finalPricePKR', 'createdAt', 'updatedAt'];
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().hasOnly(allowedKeys) &&
+             data.customerId == request.auth.uid &&
+             data.location is string && data.location.size() <= 200 &&
+             (data.description == null || (data.description is string && data.description.size() <= 1000)) &&
+             data.initialOfferPKR is number && data.initialOfferPKR > 0 &&
+             data.status in ['pending', 'negotiating', 'in_progress', 'completed', 'cancelled'] &&
+             data.createdAt == request.time;
+    }
+
+    function isValidNegotiation(data, requestId) {
+      let requiredKeys = ['id', 'requestId', 'providerId', 'offerPKR', 'createdAt'];
+      let allowedKeys = ['id', 'requestId', 'providerId', 'offerPKR', 'message', 'createdAt'];
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().hasOnly(allowedKeys) &&
+             data.requestId == requestId &&
+             data.providerId == request.auth.uid &&
+             data.offerPKR is number && data.offerPKR > 0 &&
+             (data.message == null || (data.message is string && data.message.size() <= 200)) &&
+             data.createdAt == request.time;
+    }
+
+    function isValidCivicIssue(data) {
+      let requiredKeys = ['id', 'creatorId', 'title', 'description', 'category', 'upvotesCount', 'status', 'createdAt'];
+      let allowedKeys = ['id', 'creatorId', 'title', 'description', 'category', 'photoUrl', 'upvotesCount', 'status', 'createdAt', 'updatedAt'];
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().hasOnly(allowedKeys) &&
+             data.creatorId == request.auth.uid &&
+             data.title is string && data.title.size() >= 5 && data.title.size() <= 100 &&
+             data.description is string && data.description.size() >= 20 && data.description.size() <= 2000 &&
+             data.category in ['Roads', 'Water', 'Electricity', 'Waste', 'Other'] &&
+             data.upvotesCount == 0 &&
+             data.status == 'posted' &&
+             data.createdAt == request.time;
+    }
+
+    function isValidNotification(data) {
+      let requiredKeys = ['id', 'userId', 'title', 'message', 'type', 'referenceId', 'read', 'createdAt'];
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().hasOnly(requiredKeys) &&
+             data.userId == request.auth.uid &&
+             data.title is string && data.title.size() <= 100 &&
+             data.message is string && data.message.size() <= 500 &&
+             data.type in ['job_status', 'civic_escalation'] &&
+             data.referenceId is string &&
+             data.read is bool &&
+             data.createdAt == request.time;
+    }
+
+    function isValidMessage(data) {
+      let requiredKeys = ['id', 'senderId', 'text', 'createdAt'];
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().hasOnly(requiredKeys) &&
+             data.senderId == request.auth.uid &&
+             data.text is string && data.text.size() <= 500 &&
+             data.createdAt == request.time;
+    }
+
+    // Match blocks
+    match /users/{userId} {
+      allow get: if true; // Names are needed for comments even for visitors
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidUser(incoming(), false);
+      allow update: if isSignedIn() && isOwner(userId) && isValidUser(incoming(), true) && 
+                    incoming().role == existing().role; // Cannot change role
+
+      match /notifications/{notificationId} {
+        allow read: if isOwner(userId);
+        allow create: if isSignedIn(); 
+        allow update: if isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      }
+    }
+
+    match /service_requests/{requestId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(requestId) && isValidServiceRequest(incoming());
+      allow update: if isSignedIn() && (
+        // Owner updates
+        (isOwner(existing().customerId) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'assignedProviderId', 'finalPricePKR', 'updatedAt'])) ||
+        // Assigned provider updates
+        (isOwner(existing().assignedProviderId) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+        // System/Admin
+        isAdmin()
+      ) && incoming().updatedAt == request.time;
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && (isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.customerId) || isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.assignedProviderId));
+        allow create: if isSignedIn() && isValidId(messageId) && isValidMessage(incoming()) && 
+                      (isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.customerId) || isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.assignedProviderId));
+      }
+    }
+
+    match /service_requests/{requestId}/negotiations/{negotiationId} {
+      allow read: if isSignedIn() && (isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.customerId) || isOwner(resource.data.providerId));
+      allow create: if isSignedIn() && isValidId(negotiationId) && isValidNegotiation(incoming(), requestId) && 
+                    exists(/databases/$(database)/documents/service_requests/$(requestId));
+    }
+
+    match /civic_issues/{issueId} {
+      allow read: if true; // Publicly readable
+      allow create: if isSignedIn() && isValidId(issueId) && isValidCivicIssue(incoming());
+      allow update: if isSignedIn() && (
+        // Admin can update status
+        (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+        // Users can upvote
+        (incoming().diff(existing()).affectedKeys().hasOnly(['upvotesCount', 'updatedAt', 'location']))
+      );
+    }
+
+    match /civic_issues/{issueId}/upvotes/{userId} {
+      allow read: if true; // Publicly readable
+      allow create: if isSignedIn() && isOwner(userId) && 
+                    exists(/databases/$(database)/documents/civic_issues/$(issueId));
+    }
+
+    match /civic_issues/{issueId}/comments/{commentId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidId(commentId) && 
+                    request.resource.data.userId == request.auth.uid &&
+                    request.resource.data.text is string &&
+                    request.resource.data.text.size() > 0 &&
+                    request.resource.data.text.size() <= 500 &&
+                    request.resource.data.createdAt == request.time;
+    }
+  }
+}

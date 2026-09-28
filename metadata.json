@@ -1,0 +1,6 @@
+{
+  "name": "Hamrah",
+  "description": "A community-driven super app for Chitral uniting service hiring with civic advocacy.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
