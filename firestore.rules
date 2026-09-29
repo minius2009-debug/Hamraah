@@ -70,17 +70,19 @@ service cloud.firestore {
     }
 
     function isValidServiceRequest(data) {
-      let requiredKeys = ['id', 'customerId', 'category', 'location', 'initialOfferPKR', 'status', 'createdAt'];
+      let requiredKeys = ['id', 'customerId', 'category', 'location', 'initialOfferPKR', 'status', 'createdAt', 'updatedAt'];
       let allowedKeys = ['id', 'customerId', 'category', 'location', 'destination', 'description', 'voiceNoteUrl', 'initialOfferPKR', 'status', 'assignedDriverId', 'finalPricePKR', 'createdAt', 'updatedAt'];
       return data.keys().hasAll(requiredKeys) &&
              data.keys().hasOnly(allowedKeys) &&
              data.customerId == request.auth.uid &&
              data.location is string && data.location.size() <= 200 &&
-             (data.destination == null || (data.destination is string && data.destination.size() <= 200)) &&
-             (data.description == null || (data.description is string && data.description.size() <= 1000)) &&
+             (data.get('destination', null) == null || (data.destination is string && data.destination.size() <= 200)) &&
+             (data.get('description', null) == null || (data.description is string && data.description.size() <= 1000)) &&
+             (data.get('assignedDriverId', null) == null || (data.assignedDriverId is string && data.assignedDriverId.size() <= 128)) &&
              data.initialOfferPKR is number && data.initialOfferPKR > 0 &&
              data.status in ['pending', 'negotiating', 'in_progress', 'completed', 'cancelled'] &&
-             data.createdAt == request.time;
+             data.createdAt == request.time &&
+             data.updatedAt == request.time;
     }
 
     function isValidNegotiation(data, requestId) {
@@ -96,7 +98,7 @@ service cloud.firestore {
     }
 
     function isValidCivicIssue(data) {
-      let requiredKeys = ['id', 'creatorId', 'title', 'description', 'category', 'upvotesCount', 'status', 'createdAt'];
+      let requiredKeys = ['id', 'creatorId', 'title', 'description', 'category', 'upvotesCount', 'status', 'createdAt', 'updatedAt'];
       let allowedKeys = ['id', 'creatorId', 'title', 'description', 'category', 'photoUrl', 'upvotesCount', 'status', 'createdAt', 'updatedAt', 'lat', 'lng'];
       return data.keys().hasAll(requiredKeys) &&
              data.keys().hasOnly(allowedKeys) &&
@@ -107,8 +109,10 @@ service cloud.firestore {
              data.upvotesCount == 0 &&
              data.status == 'posted' &&
              data.createdAt == request.time &&
-             (data.lat == null || data.lat is number) &&
-             (data.lng == null || data.lng is number);
+             data.updatedAt == request.time &&
+             (data.get('lat', null) == null || data.lat is number) &&
+             (data.get('lng', null) == null || data.lng is number) &&
+             (data.get('photoUrl', null) == null || (data.photoUrl is string && data.photoUrl.size() <= 500));
     }
 
     function isValidNotification(data) {
@@ -138,8 +142,10 @@ service cloud.firestore {
       allow get: if true; // Names are needed for comments even for visitors
       allow list: if isSignedIn();
       allow create: if isSignedIn() && isValidUser(incoming(), false);
-      allow update: if isSignedIn() && isOwner(userId) && isValidUser(incoming(), true) && 
-                    incoming().role == existing().role; // Cannot change role
+      allow update: if isSignedIn() && (
+        isOwner(userId) || 
+        (incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'reviewsCount', 'updatedAt']) && existing().role == 'driver')
+      );
 
       match /notifications/{notificationId} {
         allow read: if isOwner(userId);

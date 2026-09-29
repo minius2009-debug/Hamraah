@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { collection, doc, setDoc, getDoc, query, where, orderBy, onSnapshot, serverTimestamp, addDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, query, where, orderBy, onSnapshot, serverTimestamp, addDoc, updateDoc, increment } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, MapPin, Mic, Send, Banknote, Navigation, Loader2, Radio, Star, ShieldCheck, Car, Clock, MessageSquare, X, Info } from 'lucide-react';
+import { ArrowLeft, MapPin, Mic, Send, Banknote, Navigation, Loader2, Radio, Star, ShieldCheck, Car, Clock, MessageSquare, X, Info, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface BookingScreenProps {
@@ -39,8 +39,9 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
   const [locating, setLocating] = useState(false);
   const [locatingDest, setLocatingDest] = useState(false);
   
-  const isTransport = ['drivers', 'bikes', 'taxis', 'rickshaws', 'cars'].includes(categoryId);
-  const categoryLabel = categoryId === 'cars' ? 'Rent a Car' : categoryId === 'bikes' ? 'Hire a Bike' : categoryId === 'taxis' ? 'Book a Taxi' : categoryId === 'rickshaws' ? 'Rickshaw' : categoryId;
+  const [activeCategory, setActiveCategory] = useState(categoryId);
+  const isTransport = ['drivers', 'bikes', 'taxis', 'rickshaws', 'cars'].includes(activeCategory);
+  const categoryLabel = activeCategory === 'cars' ? 'Rent a Car' : activeCategory === 'bikes' ? 'Hire a Bike' : activeCategory === 'taxis' ? 'Book a Taxi' : activeCategory === 'rickshaws' ? 'Rickshaw' : activeCategory;
   
   // Real Data States
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -51,9 +52,83 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [loadingDrivers, setLoadingDrivers] = useState(true);
+  const [trackingProgress, setTrackingProgress] = useState(0);
+  const [initialEta, setInitialEta] = useState<number | null>(null);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [userRating, setUserRating] = useState(5);
+  const [ratingLoading, setRatingLoading] = useState(false);
+  const [rideCompleted, setRideCompleted] = useState(false);
+  const [estimatedDistance, setEstimatedDistance] = useState<number | null>(null);
+  const [estimatedPrice, setEstimatedPrice] = useState<number | null>(null);
+
+  // Price Calculation Logic
+  useEffect(() => {
+    const parseCoords = (str: string) => {
+      const match = str.match(/\(([^,]+),\s*([^)]+)\)/);
+      if (match) return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+      return null;
+    };
+
+    const fromCoords = parseCoords(location);
+    const toCoords = parseCoords(destination);
+
+    if (fromCoords && toCoords) {
+      // Haversine formula for distance
+      const R = 6371; // km
+      const dLat = (toCoords.lat - fromCoords.lat) * Math.PI / 180;
+      const dLon = (toCoords.lng - fromCoords.lng) * Math.PI / 180;
+      const a = 
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(fromCoords.lat * Math.PI / 180) * Math.cos(toCoords.lat * Math.PI / 180) * 
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const distance = R * c;
+      
+      setEstimatedDistance(Number(distance.toFixed(2)));
+      
+      // Category rates
+      const rates: Record<string, number> = {
+        'taxis': 80,
+        'bikes': 30,
+        'rickshaws': 45,
+        'cars': 120,
+        'drivers': 50
+      };
+      
+      const price = distance * (rates[activeCategory] || 50);
+      setEstimatedPrice(Math.round(price));
+      if (!offer) setOffer(Math.round(price).toString());
+    } else {
+      setEstimatedDistance(null);
+      setEstimatedPrice(null);
+    }
+  }, [location, destination, activeCategory]);
+
+  // Real-time tracking simulator
+  useEffect(() => {
+    if (!selectedDriver || eta === null || eta <= 0) return;
+
+    const interval = setInterval(() => {
+      setEta(prev => {
+        if (prev === null || prev <= 0) return 0;
+        return prev - 1;
+      });
+      
+      setTrackingProgress(prev => {
+        const next = prev + (100 / (initialEta || 15));
+        return next > 100 ? 100 : next;
+      });
+    }, 5000); // Update every 5 seconds for simulation
+
+    return () => clearInterval(interval);
+  }, [selectedDriver, initialEta]);
 
   // Fetch Drivers from Firestore
   useEffect(() => {
+    if (!user) {
+      setLoadingDrivers(false);
+      return;
+    }
     const q = query(collection(db, 'users'), where('role', '==', 'driver'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setDrivers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Driver)));
@@ -63,7 +138,7 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
       setLoadingDrivers(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   // Real-time Chat Listener
   useEffect(() => {
@@ -78,14 +153,59 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
     return () => unsubscribe();
   }, [activeChatId]);
 
+  const handleRateDriver = async () => {
+    if (!user || !selectedDriver) return;
+    setRatingLoading(true);
+    try {
+      const driverRef = doc(db, 'users', selectedDriver.id);
+      const driverSnap = await getDoc(driverRef);
+      
+      if (driverSnap.exists()) {
+        const data = driverSnap.data();
+        const currentRating = data.rating || 5;
+        const currentCount = data.reviewsCount || 0;
+        
+        const newCount = currentCount + 1;
+        const newRating = ((currentRating * currentCount) + userRating) / newCount;
+        
+        await updateDoc(driverRef, {
+          rating: Number(newRating.toFixed(1)),
+          reviewsCount: newCount,
+          updatedAt: serverTimestamp()
+        });
+
+        // Also add to a reviews collection for history
+        await addDoc(collection(db, 'reviews'), {
+          driverId: selectedDriver.id,
+          customerId: user.uid,
+          rating: userRating,
+          createdAt: serverTimestamp()
+        });
+
+        setRideCompleted(true);
+        setShowRatingModal(false);
+        alert(`Thank you! You rated ${selectedDriver.name} ${userRating} stars.`);
+        onSuccess();
+      }
+    } catch (error) {
+      console.error("Rating error:", error);
+      alert("Failed to submit rating. Please try again.");
+    } finally {
+      setRatingLoading(false);
+    }
+  };
+
   const handleSelectDriver = async (driver: Driver) => {
     if (!user) {
       login();
       return;
     }
     
+    const randomEta = Math.floor(Math.random() * 10) + 5;
     setSelectedDriver(driver);
-    setEta(Math.floor(Math.random() * 15) + 5);
+    setEta(randomEta);
+    setInitialEta(randomEta);
+    setTrackingProgress(0);
     
     // Check or Create Chat Session
     const chatId = user.uid < driver.id ? `${user.uid}_${driver.id}` : `${driver.id}_${user.uid}`;
@@ -193,7 +313,8 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
       return;
     }
 
-    if (!offer || Number(offer) <= 0) {
+    const numericOffer = Number(offer);
+    if (!offer || isNaN(numericOffer) || numericOffer <= 0) {
       alert("Please enter a valid price offer");
       return;
     }
@@ -204,11 +325,11 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
       await setDoc(doc(db, path, requestId), {
         id: requestId,
         customerId: user.uid,
-        category: categoryId,
+        category: activeCategory,
         location,
         destination: isTransport ? destination : null,
         description,
-        initialOfferPKR: Number(offer),
+        initialOfferPKR: numericOffer,
         assignedDriverId: selectedDriver?.id || null,
         status: selectedDriver ? 'negotiating' : 'pending',
         createdAt: serverTimestamp(),
@@ -250,26 +371,74 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
         </div>
       )}
 
-      {user && categoryId === 'cars' && (
+      {user && isTransport && (
         <div className="px-6 mb-6">
-          <div className="relative aspect-[16/9] rounded-3xl overflow-hidden shadow-lg shadow-teal/10">
+          <motion.div 
+            key={activeCategory}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative aspect-[21/9] rounded-[32px] overflow-hidden shadow-xl shadow-teal/10"
+          >
             <img 
-              src="/src/assets/images/car_rental_hero_1790495430237.jpg" 
-              alt="Car Rental"
+              src={
+                activeCategory === 'cars' ? '/src/assets/images/car_rental_hero_1790495430237.jpg' :
+                activeCategory === 'bikes' ? '/src/assets/images/bike_rental_hero_1790668396314.jpg' :
+                activeCategory === 'taxis' ? '/src/assets/images/taxi_booking_hero_1790668419818.jpg' :
+                activeCategory === 'rickshaws' ? '/src/assets/images/rickshaw_service_hero_1790668434852.jpg' :
+                '/src/assets/images/car_rental_hero_1790495430237.jpg'
+              } 
+              alt={categoryLabel}
               className="w-full h-full object-cover"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-teal/80 via-transparent to-transparent flex items-end p-6">
-              <div>
-                <span className="block text-white font-bold text-lg">Premium Fleet</span>
-                <span className="text-gold text-xs font-bold uppercase tracking-wider">Available for Chitral Explorers</span>
+            <div className="absolute inset-0 bg-gradient-to-t from-teal/90 via-teal/20 to-transparent flex items-end p-6">
+              <div className="w-full flex justify-between items-end">
+                <div>
+                  <span className="block text-white font-black text-xl tracking-tight leading-none mb-1">
+                    {activeCategory === 'cars' ? 'Premium Cars' : 
+                     activeCategory === 'bikes' ? 'Adventure Bikes' : 
+                     activeCategory === 'taxis' ? 'Valley Taxis' : 'Local Rickshaw'}
+                  </span>
+                  <span className="text-gold text-[10px] font-black uppercase tracking-[0.2em] opacity-90">
+                    Trusted by 500+ Travelers
+                  </span>
+                </div>
+                <div className="bg-white/20 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/30">
+                  <span className="text-white text-[10px] font-bold">Chitral Network</span>
+                </div>
               </div>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
 
       {user && isTransport && (
         <div className="px-6 mb-4">
+          <div className="flex gap-2 p-1.5 bg-slate-100 rounded-[24px] mb-4">
+            {[
+              { id: 'taxis', label: 'Taxi', img: '/src/assets/images/taxi_booking_hero_1790668419818.jpg' },
+              { id: 'bikes', label: 'Bike', img: '/src/assets/images/bike_rental_hero_1790668396314.jpg' },
+              { id: 'rickshaws', label: 'Rickshaw', img: '/src/assets/images/rickshaw_service_hero_1790668434852.jpg' },
+              { id: 'cars', label: 'Car', img: '/src/assets/images/car_rental_hero_1790495430237.jpg' }
+            ].map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => setActiveCategory(cat.id)}
+                className={`flex-1 flex flex-col items-center p-1 rounded-[20px] transition-all ${
+                  activeCategory === cat.id 
+                    ? 'bg-white shadow-md scale-105 z-10' 
+                    : 'opacity-60 hover:opacity-100'
+                }`}
+              >
+                <div className="w-full aspect-square rounded-[16px] overflow-hidden mb-1.5 border-2 border-transparent group-hover:border-teal/20 transition-all">
+                  <img src={cat.img} alt="" className="w-full h-full object-cover" />
+                </div>
+                <span className={`text-[9px] font-black uppercase tracking-tighter ${activeCategory === cat.id ? 'text-teal' : 'text-slate-500'}`}>
+                  {cat.label}
+                </span>
+              </button>
+            ))}
+          </div>
+
           <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="relative">
@@ -291,7 +460,7 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
         </div>
       )}
 
-      {user && ['drivers', 'bikes', 'taxis', 'rickshaws'].includes(categoryId) && (
+      {user && ['drivers', 'bikes', 'taxis', 'rickshaws', 'cars'].includes(activeCategory) && (
         <div className="px-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-teal text-sm uppercase tracking-wider">Available {categoryLabel}s</h3>
@@ -390,29 +559,104 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-teal text-white rounded-3xl p-5 shadow-lg shadow-teal/20"
+            className="bg-teal text-white rounded-[32px] p-6 shadow-xl shadow-teal/20 overflow-hidden relative"
           >
-            <div className="flex items-center justify-between mb-4">
+            {/* Background Decorative Pattern */}
+            <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-white/5 rounded-full blur-3xl pointer-events-none" />
+            
+            <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-                  <Clock size={20} />
+                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-md">
+                  <Clock size={24} className={eta && eta < 3 ? 'text-gold animate-pulse' : 'text-white'} />
                 </div>
                 <div>
-                  <p className="text-[10px] opacity-70 uppercase font-bold tracking-wider">Estimated Arrival</p>
-                  <p className="text-lg font-black">{eta} Minutes</p>
+                  <p className="text-[10px] opacity-70 uppercase font-black tracking-widest">Estimated Arrival</p>
+                  <p className="text-2xl font-black">
+                    {eta && eta > 0 ? `${eta} mins` : 'Arrived!'}
+                  </p>
                 </div>
               </div>
-              <button 
-                onClick={() => setShowChat(true)}
-                className="bg-white text-teal px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-gold transition-colors"
-              >
-                <MessageSquare size={16} />
-                Chat
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => setShowChat(true)}
+                  className="bg-white/20 text-white px-4 py-2.5 rounded-2xl text-xs font-black flex items-center gap-2 backdrop-blur-md hover:bg-white/30 transition-colors"
+                >
+                  <MessageSquare size={18} />
+                  CHAT
+                </button>
+                <button 
+                  onClick={() => setShowRatingModal(true)}
+                  className="bg-gold text-teal px-5 py-2.5 rounded-2xl text-xs font-black flex items-center gap-2 shadow-lg shadow-gold/20 hover:scale-105 transition-transform"
+                >
+                  <CheckCircle2 size={18} />
+                  FINISH RIDE
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-2 text-[10px] bg-black/10 p-2 rounded-lg">
-              <Info size={12} />
-              <span>Live tracking is active based on {selectedDriver.name}'s GPS.</span>
+
+            {/* Tracking Visualization */}
+            <div className="relative h-24 bg-black/10 rounded-[24px] p-4 flex flex-col justify-center">
+              <div className="flex justify-between items-center mb-2 px-2">
+                <div className="flex flex-col items-center gap-1">
+                  <div className="w-2 h-2 bg-white rounded-full shadow-[0_0_8px_white]" />
+                  <span className="text-[8px] font-bold opacity-60 uppercase">Driver</span>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <div className="w-2 h-2 bg-gold rounded-full shadow-[0_0_8px_#FFD700]" />
+                  <span className="text-[8px] font-bold opacity-60 uppercase">You</span>
+                </div>
+              </div>
+              
+              <div className="relative h-1 bg-white/20 rounded-full mx-2">
+                {/* Route Line */}
+                <div className="absolute inset-0 bg-white/10 rounded-full overflow-hidden">
+                  <div className="h-full w-full bg-[repeating-linear-gradient(90deg,transparent,transparent_8px,rgba(255,255,255,0.2)_8px,rgba(255,255,255,0.2)_16px)]" />
+                </div>
+                
+                {/* Progress Fill */}
+                <motion.div 
+                  className="absolute left-0 top-0 h-full bg-gold rounded-full"
+                  animate={{ width: `${trackingProgress}%` }}
+                  transition={{ type: "spring", stiffness: 50 }}
+                />
+
+                {/* Moving Driver Icon */}
+                <motion.div 
+                  className="absolute top-1/2 -translate-y-1/2 -ml-5"
+                  animate={{ left: `${trackingProgress}%` }}
+                  transition={{ type: "spring", stiffness: 50 }}
+                >
+                  <div className="w-10 h-10 bg-white p-1 rounded-2xl shadow-xl border-2 border-white transform">
+                    <img 
+                      src={
+                        activeCategory === 'cars' ? '/src/assets/images/car_rental_hero_1790495430237.jpg' :
+                        activeCategory === 'bikes' ? '/src/assets/images/bike_rental_hero_1790668396314.jpg' :
+                        activeCategory === 'taxis' ? '/src/assets/images/taxi_booking_hero_1790668419818.jpg' :
+                        '/src/assets/images/rickshaw_service_hero_1790668434852.jpg'
+                      } 
+                      alt="" 
+                      className="w-full h-full object-cover rounded-xl" 
+                    />
+                  </div>
+                  {/* Pulse Effect */}
+                  <div className="absolute inset-0 bg-white rounded-2xl animate-ping opacity-20 pointer-events-none" />
+                </motion.div>
+              </div>
+
+              <div className="mt-4 flex justify-between items-center px-1">
+                <div className="flex items-center gap-2">
+                   <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                   <span className="text-[9px] font-bold tracking-tight italic">Live GPS Signal Active</span>
+                </div>
+                <span className="text-[9px] font-black text-gold uppercase tracking-tighter">
+                  {trackingProgress > 90 ? 'Nearby' : `${Math.round(100 - trackingProgress)}% to Pickup`}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center gap-2 text-[10px] bg-white/10 p-3 rounded-2xl border border-white/5">
+              <ShieldCheck size={14} className="text-emerald-400" />
+              <span className="opacity-90 font-medium">Your ride with {selectedDriver.name} is end-to-end encrypted.</span>
             </div>
           </motion.div>
         </div>
@@ -443,6 +687,12 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
                 className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-12 text-sm focus:outline-none focus:ring-2 focus:ring-teal/50"
               />
               <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-crimson" size={18} />
+              {location.includes('(') && (
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[8px] font-black text-emerald-500 bg-emerald-50 px-2 py-1 rounded-full uppercase">
+                  <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse" />
+                  GPS Locked
+                </div>
+              )}
             </div>
           </div>
 
@@ -469,8 +719,37 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
                   className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-12 text-sm focus:outline-none focus:ring-2 focus:ring-teal/50"
                 />
                 <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={18} />
+                {destination.includes('(') && (
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[8px] font-black text-emerald-500 bg-emerald-50 px-2 py-1 rounded-full uppercase">
+                    <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse" />
+                    GPS Locked
+                  </div>
+                )}
               </div>
             </div>
+          )}
+
+          {isTransport && estimatedPrice !== null && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-teal text-white p-4 rounded-[28px] shadow-lg shadow-teal/20 flex items-center justify-between overflow-hidden relative"
+            >
+              <div className="absolute top-0 right-0 -mr-8 -mt-8 w-24 h-24 bg-white/5 rounded-full blur-2xl" />
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-md">
+                  <Banknote size={20} className="text-gold" />
+                </div>
+                <div>
+                  <p className="text-[10px] opacity-70 font-black uppercase tracking-widest leading-none mb-1">Estimated Fare</p>
+                  <p className="text-xl font-black leading-none">PKR {estimatedPrice}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] opacity-70 font-black uppercase tracking-widest leading-none mb-1">Distance</p>
+                <p className="text-sm font-bold text-gold leading-none">{estimatedDistance} KM</p>
+              </div>
+            </motion.div>
           )}
 
           <div className="space-y-1">
@@ -497,7 +776,7 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
 
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
-              {categoryId === 'cars' ? 'Rental Duration (Days)' : isTransport ? 'Price Offer (PKR)' : 'Your Initial Offer (PKR)'}
+              {activeCategory === 'cars' ? 'Rental Duration (Days)' : isTransport ? 'Price Offer (PKR)' : 'Your Initial Offer (PKR)'}
             </label>
             <div className="relative">
               <input 
@@ -505,7 +784,7 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
                 type="number"
                 value={offer}
                 onChange={(e) => setOffer(e.target.value)}
-                placeholder={categoryId === 'cars' ? "e.g. 3" : "e.g. 1500"}
+                placeholder={activeCategory === 'cars' ? "e.g. 3" : "e.g. 1500"}
                 className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-12 text-sm font-bold text-teal focus:outline-none focus:ring-2 focus:ring-teal/50"
               />
               <Banknote className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={18} />
@@ -524,6 +803,71 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
         </form>
       </div>
       )}
+      {/* Rating Modal */}
+      <AnimatePresence>
+        {showRatingModal && selectedDriver && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-center justify-center p-6"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white w-full max-w-sm rounded-[40px] p-8 text-center shadow-2xl"
+            >
+              <div className="relative w-24 h-24 mx-auto mb-6">
+                <img 
+                  src={selectedDriver.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedDriver.id}`} 
+                  alt="" 
+                  className="w-full h-full rounded-3xl object-cover border-4 border-teal/10 p-1 bg-slate-50"
+                />
+                <div className="absolute -bottom-2 -right-2 bg-gold text-teal p-1.5 rounded-full shadow-lg">
+                  <Star size={16} className="fill-current" />
+                </div>
+              </div>
+              
+              <h3 className="text-xl font-black text-teal mb-1">Rate Your Ride</h3>
+              <p className="text-sm text-slate-500 mb-8">How was your journey with <span className="font-bold text-teal">{selectedDriver.name}</span>?</p>
+              
+              <div className="flex justify-center gap-3 mb-10">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <motion.button
+                    key={star}
+                    whileTap={{ scale: 0.8 }}
+                    onClick={() => setUserRating(star)}
+                    className="transition-transform"
+                  >
+                    <Star 
+                      size={40} 
+                      className={`${star <= userRating ? 'fill-gold text-gold' : 'text-slate-200'} transition-colors`}
+                    />
+                  </motion.button>
+                ))}
+              </div>
+              
+              <div className="space-y-3">
+                <button 
+                  onClick={handleRateDriver}
+                  disabled={ratingLoading}
+                  className="w-full bg-teal text-white py-4 rounded-2xl font-black shadow-xl shadow-teal/20 flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {ratingLoading ? <Loader2 size={20} className="animate-spin" /> : 'SUBMIT RATING'}
+                </button>
+                <button 
+                  onClick={() => setShowRatingModal(false)}
+                  className="w-full py-4 rounded-2xl font-bold text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  Maybe Later
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Chat Modal */}
       <AnimatePresence>
         {showChat && selectedDriver && (

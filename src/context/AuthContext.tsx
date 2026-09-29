@@ -82,13 +82,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await signInWithPopup(auth, provider);
     } catch (error: any) {
+      console.error("Detailed login error:", error);
+      
+      let message = "Login failed. Please try again.";
+      
       if (error.code === 'auth/cancelled-popup-request') {
-        console.log("Login request already in progress.");
+        message = "Login request already in progress.";
       } else if (error.code === 'auth/popup-closed-by-user') {
-        console.log("User closed the login popup.");
-      } else {
-        console.error("Login failed:", error);
+        message = "Login popup was closed. Please keep the window open to sign in.";
+      } else if (error.code === 'auth/popup-blocked') {
+        message = "Login popup was blocked by your browser. Please allow popups for this site.";
+      } else if (error.code === 'auth/network-request-failed') {
+        message = "Network error. Please check your internet connection.";
+      } else if (error.code === 'auth/internal-error') {
+        message = "Internal authentication error. This often happens if 3rd-party cookies are blocked.";
       }
+      
+      alert(message + "\n\nTip: If you see a 'Blocked' error, ensure 3rd-party cookies and cross-site tracking are ALLOWED in your browser settings for this preview.");
     } finally {
       setIsLoggingIn(false);
     }

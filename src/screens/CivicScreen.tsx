@@ -327,6 +327,7 @@ export const CivicScreen: React.FC = () => {
         upvotesCount: 0,
         status: 'posted',
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
         lat: selectedLat,
         lng: selectedLng
       });
