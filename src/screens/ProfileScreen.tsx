@@ -11,7 +11,8 @@ export const ProfileScreen: React.FC = () => {
   const [isEditingSkills, setIsEditingSkills] = useState(false);
   
   const [bio, setBio] = useState(profile?.bio || '');
-  const [experience, setExperience] = useState(profile?.experience?.toString() || '0');
+  const [experience, setExperience] = useState(profile?.experience || '');
+  const [vehicle, setVehicle] = useState(profile?.vehicle || '');
   const [portfolioItem, setPortfolioItem] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
@@ -46,9 +47,10 @@ export const ProfileScreen: React.FC = () => {
     try {
       await updateDoc(doc(db, 'users', user.uid), {
         bio,
-        experience: Number(experience)
+        experience,
+        vehicle
       });
-      alert("Professional info updated!");
+      alert("Driver info updated!");
     } catch (error) {
       console.error("Save error:", error);
     } finally {
@@ -85,7 +87,7 @@ export const ProfileScreen: React.FC = () => {
 
   const toggleRole = async () => {
     if (!user || !profile) return;
-    const newRole = profile.role === 'customer' ? 'provider' : 'customer';
+    const newRole = profile.role === 'customer' ? 'driver' : 'customer';
     try {
       await updateDoc(doc(db, 'users', user.uid), {
         role: newRole
@@ -149,7 +151,7 @@ export const ProfileScreen: React.FC = () => {
           <p className="text-slate-500 text-sm mb-4">{profile?.email}</p>
           <div className="flex flex-col items-center gap-3">
             <span className="inline-block bg-teal text-white text-[10px] font-bold uppercase tracking-widest px-4 py-1 rounded-full">
-              {profile?.role === 'provider' ? 'Service Provider' : 'Service Taker'} Mode
+              {profile?.role === 'driver' ? 'Driver Mode' : 'Customer Mode'}
             </span>
             
             <button 
@@ -157,28 +159,28 @@ export const ProfileScreen: React.FC = () => {
               className="flex items-center gap-2 text-[10px] font-bold text-gold hover:text-gold/80 transition-colors bg-gold/5 px-4 py-2 rounded-xl border border-gold/10"
             >
               <RefreshCcw size={12} />
-              Switch to {profile?.role === 'customer' ? 'Service Provider' : 'Service Taker'}
+              Switch to {profile?.role === 'customer' ? 'Driver' : 'Customer'}
             </button>
           </div>
         </div>
       )}
 
-      {user && profile?.role === 'provider' && (
+      {user && profile?.role === 'driver' && (
         <div className="grid grid-cols-2 gap-4 mb-8">
            <div className="bg-emerald-50 p-6 rounded-[32px] border border-emerald-100 shadow-sm">
-              <span className="block text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-1">Total Earnings</span>
-              <span className="text-xl font-black text-teal">PKR {((profile.completedJobs || 0) * 2500).toLocaleString()}</span>
+              <span className="block text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-1">Total Trips</span>
+              <span className="text-xl font-black text-teal">{(profile.reviewsCount || 0) + 12}</span>
            </div>
            <div className="bg-blue-50 p-6 rounded-[32px] border border-blue-100 shadow-sm">
-              <span className="block text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-1">Success Rate</span>
-              <span className="text-xl font-black text-teal">98%</span>
+              <span className="block text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-1">Rating</span>
+              <span className="text-xl font-black text-teal">{profile.rating || '4.9'}</span>
            </div>
         </div>
       )}
 
-      {profile?.role === 'provider' && (
+      {profile?.role === 'driver' && (
         <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm mb-8">
-           <h3 className="font-bold text-teal mb-4">Professional Profile</h3>
+           <h3 className="font-bold text-teal mb-4">Driver Profile</h3>
            <div className="space-y-4">
               <div className="space-y-1">
                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Professional Bio</label>
@@ -199,11 +201,20 @@ export const ProfileScreen: React.FC = () => {
                   </button>
               </div>
               <div className="space-y-1">
-                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Years of Experience</label>
+                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Years of Experience in Chitral</label>
                  <input 
-                    type="number"
                     value={experience}
                     onChange={(e) => setExperience(e.target.value)}
+                    placeholder="e.g. 10 years"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3 px-4 text-xs font-medium text-teal focus:outline-none focus:ring-1 focus:ring-teal/20"
+                 />
+              </div>
+              <div className="space-y-1">
+                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Vehicle Details</label>
+                 <input 
+                    value={vehicle}
+                    onChange={(e) => setVehicle(e.target.value)}
+                    placeholder="e.g. Toyota Prado (4x4)"
                     className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-3 px-4 text-xs font-medium text-teal focus:outline-none focus:ring-1 focus:ring-teal/20"
                  />
               </div>
@@ -245,10 +256,10 @@ export const ProfileScreen: React.FC = () => {
         </div>
       )}
 
-      {profile?.role === 'provider' && (
+      {profile?.role === 'driver' && (
         <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm mb-8">
            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-teal">Professional Skills</h3>
+              <h3 className="font-bold text-teal">Driver Skills</h3>
               <button 
                 onClick={() => setIsEditingSkills(!isEditingSkills)}
                 className="text-xs font-bold text-gold"

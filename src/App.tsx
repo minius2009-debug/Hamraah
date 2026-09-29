@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider } from './context/AuthContext';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
@@ -9,28 +9,48 @@ import { NotificationsScreen } from './screens/NotificationsScreen';
 import { JobsScreen } from './screens/JobsScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { SearchScreen } from './screens/SearchScreen';
+import { EmergencyScreen } from './screens/EmergencyScreen';
+import { UpdatesScreen } from './screens/UpdatesScreen';
 import { NotificationToaster } from './components/NotificationToaster';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Home, ClipboardList, Megaphone, User } from 'lucide-react';
+import { ArrowLeft, Home, ClipboardList, Megaphone, User, BellRing, PhoneCall, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const Sidebar: React.FC<{ activeTab: string; setActiveTab: (tab: string) => void }> = ({ activeTab, setActiveTab }) => {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
   const tabs = [
     { id: 'home', label: 'Services', icon: Home },
     { id: 'jobs', label: 'Market', icon: ClipboardList },
     { id: 'civic', label: 'Protest', icon: Megaphone },
+    { id: 'updates', label: 'Updates', icon: BellRing },
+    { id: 'emergency', label: 'Emergency', icon: PhoneCall },
     { id: 'profile', label: 'Profile', icon: User },
   ];
 
   return (
-    <aside className="hidden md:flex flex-col w-64 h-screen sticky top-0 bg-white border-r border-slate-200 p-6">
-      <div className="flex items-center gap-3 mb-10 px-2">
-        <img 
-          src="/src/assets/images/hamrah_logo_1790495411663.jpg" 
-          alt="Hamrah Logo" 
-          className="w-10 h-10 rounded-xl"
-        />
-        <h1 className="text-xl font-bold text-teal tracking-tight">Hamraah</h1>
+    <aside className={`hidden md:flex flex-col h-screen sticky top-0 bg-white border-r border-slate-200 p-6 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-24' : 'w-64'}`}>
+      <div className="flex items-center justify-between mb-10 px-2">
+        {!isCollapsed && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex items-center gap-3"
+          >
+            <img 
+              src="/src/assets/images/hamrah_logo_1790495411663.jpg" 
+              alt="Hamrah Logo" 
+              className="w-10 h-10 rounded-xl"
+            />
+            <h1 className="text-xl font-bold text-teal tracking-tight">Hamraah</h1>
+          </motion.div>
+        )}
+        <button 
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-colors"
+        >
+          {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+        </button>
       </div>
       
       <nav className="space-y-2 flex-1">
@@ -41,23 +61,32 @@ const Sidebar: React.FC<{ activeTab: string; setActiveTab: (tab: string) => void
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all ${
+              className={`w-full flex items-center transition-all ${
+                isCollapsed ? 'justify-center p-3' : 'gap-4 px-4 py-3'
+              } rounded-xl ${
                 isActive 
                   ? 'bg-teal text-white shadow-lg shadow-teal/20' 
                   : 'text-slate-500 hover:bg-slate-50 hover:text-teal'
               }`}
+              title={isCollapsed ? tab.label : ''}
             >
               <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
-              <span className="font-bold text-sm">{tab.label}</span>
+              {!isCollapsed && <span className="font-bold text-sm">{tab.label}</span>}
             </button>
           );
         })}
       </nav>
 
-      <div className="mt-auto p-4 bg-gold/5 rounded-2xl border border-gold/10">
-        <p className="text-[10px] font-bold text-teal/40 uppercase tracking-widest mb-1">Chitral Community</p>
-        <p className="text-xs text-teal font-medium">Building a better future together.</p>
-      </div>
+      {!isCollapsed && (
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="mt-auto p-4 bg-gold/5 rounded-2xl border border-gold/10"
+        >
+          <p className="text-[10px] font-bold text-teal/40 uppercase tracking-widest mb-1">Chitral Community</p>
+          <p className="text-xs text-teal font-medium">Building a better future together.</p>
+        </motion.div>
+      )}
     </aside>
   );
 };
@@ -113,11 +142,23 @@ export default function App() {
     }
 
     switch (activeTab) {
-      case 'home': return <HomeScreen onSelectCategory={(id) => setSelectedCategory(id)} />;
+      case 'home': return (
+        <HomeScreen 
+          onSelectCategory={(id) => setSelectedCategory(id)} 
+          onNavigateToProtest={() => setActiveTab('civic')}
+        />
+      );
       case 'jobs': return <JobsScreen />;
       case 'civic': return <CivicScreen />;
+      case 'updates': return <UpdatesScreen />;
+      case 'emergency': return <EmergencyScreen />;
       case 'profile': return <ProfileScreen />;
-      default: return <HomeScreen onSelectCategory={(id) => setSelectedCategory(id)} />;
+      default: return (
+        <HomeScreen 
+          onSelectCategory={(id) => setSelectedCategory(id)} 
+          onNavigateToProtest={() => setActiveTab('civic')}
+        />
+      );
     }
   };
 
@@ -129,6 +170,8 @@ export default function App() {
       case 'home': return 'Home';
       case 'jobs': return 'Job Marketplace';
       case 'civic': return 'Community Action';
+      case 'updates': return 'Chitral Updates';
+      case 'emergency': return 'Emergency Hub';
       case 'profile': return 'My Account';
       default: return 'Hamraah';
     }
@@ -171,8 +214,11 @@ export default function App() {
 
         {/* Right Sidebar / Ad Space / Info - Only on Large Screens */}
         <aside className="hidden lg:block w-80 h-screen sticky top-0 p-6 bg-slate-50 border-l border-slate-200">
-           <div className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-100 mb-6">
-             <h3 className="font-bold text-teal mb-4">Chitral Updates</h3>
+           <div className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-100 mb-6 cursor-pointer hover:border-teal/20 transition-all" onClick={() => setActiveTab('updates')}>
+             <h3 className="font-bold text-teal mb-4 flex items-center justify-between">
+               Chitral Updates
+               <BellRing size={16} className="text-crimson" />
+             </h3>
              <div className="space-y-4">
                <div className="pb-4 border-b border-slate-50">
                  <p className="text-xs text-slate-500 mb-1">2 hours ago</p>
@@ -185,13 +231,17 @@ export default function App() {
              </div>
            </div>
 
-           <div className="bg-gold p-6 rounded-[32px] shadow-lg shadow-gold/20 text-teal">
-             <h3 className="font-bold mb-2">Emergency?</h3>
+           <div className="bg-gold p-6 rounded-[32px] shadow-lg shadow-gold/20 text-teal cursor-pointer" onClick={() => setActiveTab('emergency')}>
+             <h3 className="font-bold mb-2 flex items-center justify-between">
+               Emergency?
+               <PhoneCall size={20} />
+             </h3>
              <p className="text-sm font-medium mb-4 opacity-80">Quick access to local emergency services.</p>
-             <button className="w-full bg-teal text-white py-3 rounded-xl font-bold text-sm">Call 1122</button>
+             <button className="w-full bg-teal text-white py-3 rounded-xl font-bold text-sm shadow-md">Open Hub</button>
            </div>
         </aside>
       </div>
     </AuthProvider>
   );
 }
+

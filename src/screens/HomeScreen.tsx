@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Search, MapPin, Star, Banknote } from 'lucide-react';
+import { Search, MapPin, Star, Banknote, Megaphone, ChevronRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface Category {
@@ -17,9 +17,12 @@ const CATEGORIES: Category[] = [
   { id: 'electricians', name: 'Electricians', image: '/src/assets/images/category_electrician_1790493862227.jpg', count: 31 },
   { id: 'plumbers', name: 'Plumbers', image: '/src/assets/images/category_plumber_1790493874730.jpg', count: 22 },
   { id: 'cars', name: 'Rent a Car', image: '/src/assets/images/car_rental_hero_1790495430237.jpg', count: 15 },
+  { id: 'bikes', name: 'Hire a Bike', image: 'https://images.unsplash.com/photo-1558981403-c5f91cbba527?w=400&h=400&fit=crop', count: 28 },
+  { id: 'taxis', name: 'Book a Taxi', image: 'https://images.unsplash.com/photo-1549416878-b9ca35df2f6f?w=400&h=400&fit=crop', count: 35 },
+  { id: 'rickshaws', name: 'Rickshaw', image: 'https://images.unsplash.com/photo-1623192257217-10499d2a0f8c?w=400&h=400&fit=crop', count: 50 },
 ];
 
-export const HomeScreen: React.FC<{ onSelectCategory: (id: string) => void }> = ({ onSelectCategory }) => {
+export const HomeScreen: React.FC<{ onSelectCategory: (id: string) => void; onNavigateToProtest: () => void }> = ({ onSelectCategory, onNavigateToProtest }) => {
   const { profile } = useAuth();
 
   return (
@@ -32,6 +35,26 @@ export const HomeScreen: React.FC<{ onSelectCategory: (id: string) => void }> = 
 
       {/* Main Content */}
       <div className="px-4">
+        {/* Community Action Banner */}
+        <motion.button
+          whileTap={{ scale: 0.98 }}
+          onClick={onNavigateToProtest}
+          className="w-full bg-crimson rounded-3xl p-4 mb-6 flex items-center justify-between text-white shadow-lg shadow-crimson/20"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center">
+              <Megaphone size={20} />
+            </div>
+            <div className="text-left">
+              <span className="block font-bold text-sm">Online Protest Hub</span>
+              <span className="text-[10px] opacity-80">Report issues & advocate for Chitral.</span>
+            </div>
+          </div>
+          <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+            <ChevronRight size={16} />
+          </div>
+        </motion.button>
+
         {profile?.role === 'customer' && (
           <div className="bg-gold/10 border border-gold/20 rounded-3xl p-4 mb-8 flex items-center justify-between">
             <div className="flex-1">

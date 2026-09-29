@@ -41,23 +41,42 @@ service cloud.firestore {
     // Entity Validations
     function isValidUser(data, isUpdate) {
       let requiredKeys = ['id', 'name', 'email', 'role', 'createdAt'];
-      let allowedKeys = ['id', 'name', 'email', 'role', 'skills', 'rating', 'completedJobs', 'bio', 'experience', 'portfolio', 'createdAt', 'isVerified'];
+      let allowedKeys = ['id', 'name', 'email', 'role', 'photoURL', 'vehicle', 'experience', 'rating', 'reviewsCount', 'isVerified', 'createdAt', 'updatedAt'];
       return data.keys().hasAll(requiredKeys) &&
              data.keys().hasOnly(allowedKeys) &&
              data.id == request.auth.uid &&
              data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
              data.email is string &&
-             data.role in ['customer', 'provider', 'admin'] &&
+             data.role in ['customer', 'driver', 'admin'] &&
              (isUpdate ? data.createdAt == existing().createdAt : data.createdAt == request.time);
+    }
+
+    function isValidChat(data) {
+      let requiredKeys = ['id', 'customerId', 'driverId', 'updatedAt'];
+      let allowedKeys = ['id', 'customerId', 'driverId', 'lastMessage', 'updatedAt'];
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().hasOnly(allowedKeys) &&
+             (data.customerId == request.auth.uid || data.driverId == request.auth.uid) &&
+             data.updatedAt == request.time;
+    }
+
+    function isValidChatMessage(data) {
+      let requiredKeys = ['senderId', 'text', 'createdAt'];
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().hasOnly(requiredKeys) &&
+             data.senderId == request.auth.uid &&
+             data.text is string && data.text.size() <= 1000 &&
+             data.createdAt == request.time;
     }
 
     function isValidServiceRequest(data) {
       let requiredKeys = ['id', 'customerId', 'category', 'location', 'initialOfferPKR', 'status', 'createdAt'];
-      let allowedKeys = ['id', 'customerId', 'category', 'location', 'description', 'voiceNoteUrl', 'initialOfferPKR', 'status', 'assignedProviderId', 'finalPricePKR', 'createdAt', 'updatedAt'];
+      let allowedKeys = ['id', 'customerId', 'category', 'location', 'destination', 'description', 'voiceNoteUrl', 'initialOfferPKR', 'status', 'assignedDriverId', 'finalPricePKR', 'createdAt', 'updatedAt'];
       return data.keys().hasAll(requiredKeys) &&
              data.keys().hasOnly(allowedKeys) &&
              data.customerId == request.auth.uid &&
              data.location is string && data.location.size() <= 200 &&
+             (data.destination == null || (data.destination is string && data.destination.size() <= 200)) &&
              (data.description == null || (data.description is string && data.description.size() <= 1000)) &&
              data.initialOfferPKR is number && data.initialOfferPKR > 0 &&
              data.status in ['pending', 'negotiating', 'in_progress', 'completed', 'cancelled'] &&
@@ -78,7 +97,7 @@ service cloud.firestore {
 
     function isValidCivicIssue(data) {
       let requiredKeys = ['id', 'creatorId', 'title', 'description', 'category', 'upvotesCount', 'status', 'createdAt'];
-      let allowedKeys = ['id', 'creatorId', 'title', 'description', 'category', 'photoUrl', 'upvotesCount', 'status', 'createdAt', 'updatedAt'];
+      let allowedKeys = ['id', 'creatorId', 'title', 'description', 'category', 'photoUrl', 'upvotesCount', 'status', 'createdAt', 'updatedAt', 'lat', 'lng'];
       return data.keys().hasAll(requiredKeys) &&
              data.keys().hasOnly(allowedKeys) &&
              data.creatorId == request.auth.uid &&
@@ -87,7 +106,9 @@ service cloud.firestore {
              data.category in ['Roads', 'Water', 'Electricity', 'Waste', 'Other'] &&
              data.upvotesCount == 0 &&
              data.status == 'posted' &&
-             data.createdAt == request.time;
+             data.createdAt == request.time &&
+             (data.lat == null || data.lat is number) &&
+             (data.lng == null || data.lng is number);
     }
 
     function isValidNotification(data) {
@@ -132,17 +153,17 @@ service cloud.firestore {
       allow create: if isSignedIn() && isValidId(requestId) && isValidServiceRequest(incoming());
       allow update: if isSignedIn() && (
         // Owner updates
-        (isOwner(existing().customerId) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'assignedProviderId', 'finalPricePKR', 'updatedAt'])) ||
-        // Assigned provider updates
-        (isOwner(existing().assignedProviderId) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+        (isOwner(existing().customerId) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'assignedDriverId', 'finalPricePKR', 'updatedAt'])) ||
+        // Assigned driver updates
+        (isOwner(existing().assignedDriverId) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
         // System/Admin
         isAdmin()
       ) && incoming().updatedAt == request.time;
 
       match /messages/{messageId} {
-        allow read: if isSignedIn() && (isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.customerId) || isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.assignedProviderId));
+        allow read: if isSignedIn() && (isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.customerId) || isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.assignedDriverId));
         allow create: if isSignedIn() && isValidId(messageId) && isValidMessage(incoming()) && 
-                      (isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.customerId) || isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.assignedProviderId));
+                      (isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.customerId) || isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.assignedDriverId));
       }
     }
 
@@ -177,6 +198,19 @@ service cloud.firestore {
                     request.resource.data.text.size() > 0 &&
                     request.resource.data.text.size() <= 500 &&
                     request.resource.data.createdAt == request.time;
+    }
+
+    match /chats/{chatId} {
+      allow read: if isSignedIn() && (isOwner(existing().customerId) || isOwner(existing().driverId));
+      allow create: if isSignedIn() && isValidId(chatId) && isValidChat(incoming());
+      allow update: if isSignedIn() && (isOwner(existing().customerId) || isOwner(existing().driverId)) && 
+                    isValidChat(incoming()) && incoming().updatedAt == request.time;
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && (isOwner(get(/databases/$(database)/documents/chats/$(chatId)).data.customerId) || isOwner(get(/databases/$(database)/documents/chats/$(chatId)).data.driverId));
+        allow create: if isSignedIn() && isValidId(messageId) && isValidChatMessage(incoming()) && 
+                      (isOwner(get(/databases/$(database)/documents/chats/$(chatId)).data.customerId) || isOwner(get(/databases/$(database)/documents/chats/$(chatId)).data.driverId));
+      }
     }
   }
 }

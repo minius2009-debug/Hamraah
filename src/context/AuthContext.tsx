@@ -7,13 +7,16 @@ interface UserProfile {
   id: string;
   name: string;
   email: string;
-  role: 'customer' | 'provider' | 'admin';
+  role: 'customer' | 'driver' | 'provider' | 'admin';
   rating?: number;
   completedJobs?: number;
+  reviewsCount?: number;
   isVerified?: boolean;
   skills?: string[];
   bio?: string;
-  experience?: number;
+  experience?: string;
+  vehicle?: string;
+  photoURL?: string;
   portfolio?: string[];
   createdAt: any;
 }

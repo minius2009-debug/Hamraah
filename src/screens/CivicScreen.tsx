@@ -3,7 +3,23 @@ import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, setDoc,
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
-import { Megaphone, ThumbsUp, MapPin, AlertCircle, Plus, X, FileText, Sparkles, Loader2, MessageSquare, Send } from 'lucide-react';
+import { Megaphone, ThumbsUp, MapPin, AlertCircle, Plus, X, FileText, Sparkles, Loader2, MessageSquare, Send, Map as MapIcon, List, Navigation } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+// Fix for default marker icons in Leaflet with Vite
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+let DefaultIcon = L.icon({
+    iconUrl: markerIcon,
+    shadowUrl: markerShadow,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41]
+});
+
+L.Marker.prototype.options.icon = DefaultIcon;
 
 interface CivicIssue {
   id: string;
@@ -14,6 +30,8 @@ interface CivicIssue {
   status: 'posted' | 'escalated' | 'resolved';
   createdAt: any;
   creatorId: string;
+  lat?: number;
+  lng?: number;
 }
 
 interface CivicComment {
@@ -137,6 +155,27 @@ const CommentSection: React.FC<{ issueId: string }> = ({ issueId }) => {
   );
 };
 
+const LocationPicker: React.FC<{ onLocationSelect: (lat: number, lng: number) => void, initialPos?: [number, number], forcePos?: [number, number] | null }> = ({ onLocationSelect, initialPos, forcePos }) => {
+  const [position, setPosition] = useState<[number, number] | null>(initialPos || null);
+  const map = useMapEvents({
+    click(e) {
+      setPosition([e.latlng.lat, e.latlng.lng]);
+      onLocationSelect(e.latlng.lat, e.latlng.lng);
+    },
+  });
+
+  useEffect(() => {
+    if (forcePos) {
+      setPosition(forcePos);
+      map.flyTo(forcePos, map.getZoom());
+    }
+  }, [forcePos, map]);
+
+  return position === null ? null : (
+    <Marker position={position} />
+  );
+};
+
 export const CivicScreen: React.FC = () => {
   const { profile, user, login, isLoggingIn } = useAuth();
   const [issues, setIssues] = useState<CivicIssue[]>([]);
@@ -144,6 +183,9 @@ export const CivicScreen: React.FC = () => {
   const [openComments, setOpenComments] = useState<Set<string>>(new Set());
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+
+  const CHITRAL_CENTER: [number, number] = [35.8511, 71.7864];
 
   const toggleComments = (id: string) => {
     const newOpen = new Set(openComments);
@@ -213,6 +255,50 @@ export const CivicScreen: React.FC = () => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('Roads');
+  const [selectedLat, setSelectedLat] = useState<number | null>(null);
+  const [selectedLng, setSelectedLng] = useState<number | null>(null);
+  const [forcePos, setForcePos] = useState<[number, number] | null>(null);
+  const [locating, setLocating] = useState(false);
+
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
+    }
+
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setSelectedLat(latitude);
+        setSelectedLng(longitude);
+        setForcePos([latitude, longitude]);
+        setLocating(false);
+      },
+      (error) => {
+        const errorDetails = {
+          code: error.code,
+          message: error.message,
+          PERMISSION_DENIED: error.PERMISSION_DENIED,
+          POSITION_UNAVAILABLE: error.POSITION_UNAVAILABLE,
+          TIMEOUT: error.TIMEOUT
+        };
+        console.warn("Geolocation detailed error (Civic):", errorDetails);
+        
+        let displayMessage = "Unable to retrieve your location";
+        if (error.code === error.PERMISSION_DENIED) {
+          displayMessage = "Location access denied. Please enable location permissions in your browser settings.";
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          displayMessage = "Location information is unavailable in your current area.";
+        } else if (error.code === error.TIMEOUT) {
+          displayMessage = "The request to get your location timed out.";
+        }
+        
+        alert(displayMessage);
+        setLocating(false);
+      }
+    );
+  };
 
   useEffect(() => {
     const path = 'civic_issues';
@@ -240,11 +326,15 @@ export const CivicScreen: React.FC = () => {
         category,
         upvotesCount: 0,
         status: 'posted',
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        lat: selectedLat,
+        lng: selectedLng
       });
       setShowForm(false);
       setTitle('');
       setDescription('');
+      setSelectedLat(null);
+      setSelectedLng(null);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);
     }
@@ -272,11 +362,19 @@ export const CivicScreen: React.FC = () => {
     }
   };
 
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'resolved': return 'Resolved';
+      case 'escalated': return 'In Progress';
+      default: return 'Pending';
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'resolved': return 'bg-emerald-100 text-emerald-700';
-      case 'escalated': return 'bg-amber-100 text-amber-700';
-      default: return 'bg-slate-100 text-slate-700';
+      case 'resolved': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+      case 'escalated': return 'bg-blue-100 text-blue-700 border-blue-200';
+      default: return 'bg-amber-100 text-amber-700 border-amber-200';
     }
   };
 
@@ -304,7 +402,23 @@ export const CivicScreen: React.FC = () => {
       </div>
 
       <div className="flex items-center justify-between mb-6">
-        <h3 className="font-bold text-lg text-teal">Recent Reports</h3>
+        <div className="flex items-center gap-4">
+          <h3 className="font-bold text-lg text-teal">Recent Reports</h3>
+          <div className="flex bg-slate-100 rounded-xl p-1">
+            <button 
+              onClick={() => setViewMode('list')}
+              className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-teal' : 'text-slate-400'}`}
+            >
+              <List size={16} />
+            </button>
+            <button 
+              onClick={() => setViewMode('map')}
+              className={`p-2 rounded-lg transition-all ${viewMode === 'map' ? 'bg-white shadow-sm text-teal' : 'text-slate-400'}`}
+            >
+              <MapIcon size={16} />
+            </button>
+          </div>
+        </div>
         <button 
           onClick={() => setShowForm(true)}
           className="bg-crimson text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-crimson/20"
@@ -318,6 +432,29 @@ export const CivicScreen: React.FC = () => {
         <div className="flex justify-center p-12">
           <div className="w-6 h-6 border-2 border-crimson border-t-transparent rounded-full animate-spin" />
         </div>
+      ) : viewMode === 'map' ? (
+        <div className="h-[500px] w-full rounded-3xl overflow-hidden shadow-sm border border-slate-100 relative z-10">
+          <MapContainer center={CHITRAL_CENTER} zoom={11} style={{ height: '100%', width: '100%' }}>
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            {issues.filter(i => i.lat && i.lng).map(issue => (
+              <Marker key={issue.id} position={[issue.lat!, issue.lng!]}>
+                <Popup className="custom-popup">
+                  <div className="p-2">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider mb-2 inline-block border ${getStatusColor(issue.status)}`}>
+                      {getStatusLabel(issue.status)}
+                    </span>
+                    <h4 className="font-bold text-teal text-sm mb-1">{issue.title}</h4>
+                    <p className="text-[10px] text-slate-500 mb-2">{issue.category}</p>
+                    <p className="text-xs text-slate-600 line-clamp-2">{issue.description}</p>
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
+          </MapContainer>
+        </div>
       ) : (
         <div className="space-y-6">
           {issues.map((issue) => (
@@ -328,8 +465,8 @@ export const CivicScreen: React.FC = () => {
               className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100"
             >
               <div className="flex justify-between items-start mb-3">
-                <span className={`text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider ${getStatusColor(issue.status)}`}>
-                  {issue.status}
+                <span className={`text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider border ${getStatusColor(issue.status)}`}>
+                  {getStatusLabel(issue.status)}
                 </span>
                 <span className="text-[10px] text-slate-400 font-medium">
                   {issue.createdAt?.toDate().toLocaleDateString()}
@@ -459,6 +596,37 @@ export const CivicScreen: React.FC = () => {
                     placeholder="Provide details about the issue..."
                     className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-crimson/50 resize-none"
                   />
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-2 px-1">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Tag Location (Click on Map)</label>
+                    <button 
+                      type="button"
+                      onClick={handleUseCurrentLocation}
+                      disabled={locating}
+                      className="flex items-center gap-1.5 text-[10px] font-bold text-teal bg-teal/5 px-2 py-1 rounded-lg border border-teal/10 hover:bg-teal/10 transition-colors disabled:opacity-50"
+                    >
+                      {locating ? <Loader2 size={12} className="animate-spin" /> : <Navigation size={12} />}
+                      Use My Location
+                    </button>
+                  </div>
+                  <div className="h-[200px] w-full rounded-2xl overflow-hidden border border-slate-200 relative z-10">
+                    <MapContainer center={CHITRAL_CENTER} zoom={10} style={{ height: '100%', width: '100%' }}>
+                      <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                      <LocationPicker 
+                        onLocationSelect={(lat, lng) => {
+                          setSelectedLat(lat);
+                          setSelectedLng(lng);
+                          setForcePos(null);
+                        }} 
+                        forcePos={forcePos}
+                      />
+                    </MapContainer>
+                  </div>
+                  {selectedLat && (
+                    <p className="text-[10px] text-emerald-600 mt-1 font-bold">✓ Location tagged ({selectedLat.toFixed(4)}, {selectedLng?.toFixed(4)})</p>
+                  )}
                 </div>
 
                 <button type="submit" className="w-full btn-danger mt-4">

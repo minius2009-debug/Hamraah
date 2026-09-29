@@ -2,20 +2,46 @@
   "entities": {
     "User": {
       "title": "User",
-      "description": "App user profile (customer or provider)",
+      "description": "App user profile (customer or driver)",
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Firebase Auth UID" },
         "name": { "type": "string", "minLength": 2, "maxLength": 50 },
         "email": { "type": "string", "format": "email" },
-        "role": { "type": "string", "enum": ["customer", "provider", "admin"] },
-        "skills": { "type": "array", "description": "Only for providers" },
+        "role": { "type": "string", "enum": ["customer", "driver", "admin"] },
+        "photoURL": { "type": "string" },
+        "vehicle": { "type": "string", "maxLength": 100, "description": "Only for drivers" },
+        "experience": { "type": "string", "maxLength": 100, "description": "Only for drivers" },
         "rating": { "type": "number", "description": "Average star rating" },
-        "completedJobs": { "type": "number" },
+        "reviewsCount": { "type": "number" },
         "isVerified": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "name", "email", "role", "createdAt"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A chat session between a customer and a driver",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "driverId": { "type": "string" },
+        "lastMessage": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "customerId", "driverId", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "A single message in a chat",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "text": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "text", "createdAt"]
     },
     "ServiceRequest": {
       "title": "Service Request",
@@ -26,11 +52,12 @@
         "customerId": { "type": "string" },
         "category": { "type": "string" },
         "location": { "type": "string", "maxLength": 200 },
+        "destination": { "type": "string", "maxLength": 200, "description": "Only for transport" },
         "description": { "type": "string", "maxLength": 1000 },
         "voiceNoteUrl": { "type": "string" },
         "initialOfferPKR": { "type": "number" },
         "status": { "type": "string", "enum": ["pending", "negotiating", "in_progress", "completed", "cancelled"] },
-        "assignedProviderId": { "type": "string" },
+        "assignedDriverId": { "type": "string" },
         "finalPricePKR": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -120,6 +147,14 @@
     "/civic_issues/{issueId}/upvotes/{userId}": {
       "schema": "Upvote",
       "description": "Upvotes for issues"
+    },
+    "/chats/{chatId}": {
+      "schema": "Chat",
+      "description": "Direct chats between users"
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Messages in a chat"
     }
   }
 }
