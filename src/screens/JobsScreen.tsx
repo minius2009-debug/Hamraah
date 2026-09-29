@@ -3,7 +3,7 @@ import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, setDoc, 
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
-import { MapPin, Clock, Banknote, Check, X, MessageSquare, User, ChevronRight, Star, ShieldCheck, Trophy, Send, Info, AlertCircle, ClipboardList, Sparkles, Loader2 } from 'lucide-react';
+import { MapPin, Clock, Banknote, Check, X, MessageSquare, User, ChevronRight, Star, ShieldCheck, Trophy, Send, Info, AlertCircle, ClipboardList, Sparkles, Loader2, CheckCircle2 } from 'lucide-react';
 
 interface ServiceRequest {
   id: string;
@@ -230,6 +230,32 @@ export const JobsScreen: React.FC = () => {
       );
 
       setSelectedJob(prev => prev ? { ...prev, status: 'in_progress', assignedProviderId: neg.providerId, finalPricePKR: neg.offerPKR } : null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `service_requests/${selectedJob.id}`);
+    }
+  };
+
+  const handleDirectAccept = async () => {
+    if (!user || !selectedJob) return;
+
+    try {
+      await updateDoc(doc(db, 'service_requests', selectedJob.id), {
+        status: 'in_progress',
+        assignedProviderId: user.uid,
+        finalPricePKR: selectedJob.initialOfferPKR,
+        updatedAt: serverTimestamp()
+      });
+
+      await sendNotification(
+        selectedJob.customerId,
+        "Provider Accepted Your Price!",
+        `A professional has accepted your offer of PKR ${selectedJob.initialOfferPKR} and is starting the job now.`,
+        'job_status',
+        selectedJob.id
+      );
+
+      setSelectedJob(prev => prev ? { ...prev, status: 'in_progress', assignedProviderId: user.uid, finalPricePKR: selectedJob.initialOfferPKR } : null);
+      alert("Job accepted! You can now chat with the customer.");
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `service_requests/${selectedJob.id}`);
     }
@@ -525,6 +551,22 @@ export const JobsScreen: React.FC = () => {
               ))}
             </div>
           </div>
+        )}
+
+        {isProvider && selectedJob.status === 'pending' && (
+           <div className="mt-auto p-4 bg-teal/5 rounded-2xl flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <Info className="text-teal" size={20} />
+                <p className="text-[10px] text-teal/70 font-medium">You can negotiate a different price or instantly accept the customer's offer.</p>
+              </div>
+              <button 
+                onClick={handleDirectAccept}
+                className="w-full bg-emerald-500 text-white py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform"
+              >
+                <CheckCircle2 size={16} />
+                Accept Job (PKR {selectedJob.initialOfferPKR})
+              </button>
+           </div>
         )}
 
         {isProvider && selectedJob.status === 'negotiating' && (

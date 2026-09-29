@@ -1,5 +1,6 @@
 import React from 'react';
-import { Home, ClipboardList, Megaphone, User, BellRing, PhoneCall } from 'lucide-react';
+import { Home, ClipboardList, User, BellRing, PhoneCall, LayoutDashboard } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 interface NavigationProps {
   activeTab: string;
@@ -7,16 +8,20 @@ interface NavigationProps {
 }
 
 export const Navigation: React.FC<NavigationProps> = ({ activeTab, setActiveTab }) => {
+  const { profile } = useAuth();
+  
+  const isProvider = profile?.role === 'provider';
+
   const tabs = [
-    { id: 'home', label: 'Services', icon: Home },
-    { id: 'jobs', label: 'Market', icon: ClipboardList },
+    { id: 'home', label: 'Services', icon: Home, hide: isProvider },
+    { id: 'jobs', label: isProvider ? 'Dashboard' : 'Bookings', icon: isProvider ? LayoutDashboard : ClipboardList },
     { id: 'updates', label: 'Updates', icon: BellRing },
     { id: 'emergency', label: 'Emergency', icon: PhoneCall },
     { id: 'profile', label: 'Profile', icon: User },
-  ];
+  ].filter(t => !t.hide);
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 h-16 bg-white/95 backdrop-blur-md border-t border-slate-200 grid grid-cols-5 items-center pb-safe md:hidden shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+    <nav className={`fixed bottom-0 left-0 right-0 z-40 h-16 bg-white/95 backdrop-blur-md border-t border-slate-200 grid grid-cols-${tabs.length} items-center pb-safe md:hidden shadow-[0_-4px_20px_rgba(0,0,0,0.05)]`}>
       {tabs.map((tab) => {
         const Icon = tab.icon;
         const isActive = activeTab === tab.id;

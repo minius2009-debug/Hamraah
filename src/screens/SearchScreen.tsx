@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
-import { User, Megaphone, ArrowRight, Star, ShieldCheck, MapPin, Search } from 'lucide-react';
+import { User, ArrowRight, Star, ShieldCheck, MapPin, Search } from 'lucide-react';
 
 interface SearchResult {
   id: string;
-  type: 'service' | 'provider' | 'civic';
+  type: 'service' | 'provider';
   title: string;
   subtitle: string;
   extra?: any;
@@ -24,8 +24,7 @@ const CATEGORIES = [
 export const SearchScreen: React.FC<{ 
   queryText: string; 
   onSelectCategory: (id: string) => void;
-  onSelectIssue: (id: string) => void;
-}> = ({ queryText, onSelectCategory, onSelectIssue }) => {
+}> = ({ queryText, onSelectCategory }) => {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -69,21 +68,6 @@ export const SearchScreen: React.FC<{
             });
           }
         });
-
-        // 3. Search Civic Issues (Firestore)
-        const issuesSnap = await getDocs(query(collection(db, 'civic_issues'), limit(20)));
-        issuesSnap.docs.forEach(doc => {
-          const data = doc.data();
-          if (data.title.toLowerCase().includes(lowerQuery) || data.description.toLowerCase().includes(lowerQuery)) {
-            newResults.push({
-              id: doc.id,
-              type: 'civic',
-              title: data.title,
-              subtitle: `Civic Report · ${data.category}`,
-              extra: { status: data.status }
-            });
-          }
-        });
       } catch (error) {
         console.error("Search error:", error);
       }
@@ -100,7 +84,6 @@ export const SearchScreen: React.FC<{
     switch (type) {
       case 'service': return <div className="w-10 h-10 bg-teal/10 rounded-xl flex items-center justify-center text-teal font-bold text-lg">S</div>;
       case 'provider': return <div className="w-10 h-10 bg-gold/10 rounded-xl flex items-center justify-center text-gold"><User size={20} /></div>;
-      case 'civic': return <div className="w-10 h-10 bg-crimson/10 rounded-xl flex items-center justify-center text-crimson"><Megaphone size={20} /></div>;
       default: return null;
     }
   };
@@ -122,7 +105,6 @@ export const SearchScreen: React.FC<{
               transition={{ delay: idx * 0.05 }}
               onClick={() => {
                 if (res.type === 'service') onSelectCategory(res.id);
-                if (res.type === 'civic') onSelectIssue(res.id);
               }}
               className="w-full bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 hover:border-teal/30 active:scale-[0.98] transition-all text-left group"
             >

@@ -22,7 +22,7 @@ const CATEGORIES: Category[] = [
   { id: 'rickshaws', name: 'Rickshaw', image: 'https://images.unsplash.com/photo-1623192257217-10499d2a0f8c?w=400&h=400&fit=crop', count: 50 },
 ];
 
-export const HomeScreen: React.FC<{ onSelectCategory: (id: string) => void; onNavigateToProtest: () => void }> = ({ onSelectCategory, onNavigateToProtest }) => {
+export const HomeScreen: React.FC<{ onSelectCategory: (id: string) => void }> = ({ onSelectCategory }) => {
   const { profile } = useAuth();
 
   return (
@@ -35,26 +35,6 @@ export const HomeScreen: React.FC<{ onSelectCategory: (id: string) => void; onNa
 
       {/* Main Content */}
       <div className="px-4">
-        {/* Community Action Banner */}
-        <motion.button
-          whileTap={{ scale: 0.98 }}
-          onClick={onNavigateToProtest}
-          className="w-full bg-crimson rounded-3xl p-4 mb-6 flex items-center justify-between text-white shadow-lg shadow-crimson/20"
-        >
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center">
-              <Megaphone size={20} />
-            </div>
-            <div className="text-left">
-              <span className="block font-bold text-sm">Online Protest Hub</span>
-              <span className="text-[10px] opacity-80">Report issues & advocate for Chitral.</span>
-            </div>
-          </div>
-          <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-            <ChevronRight size={16} />
-          </div>
-        </motion.button>
-
         {profile?.role === 'customer' && (
           <div className="bg-gold/10 border border-gold/20 rounded-3xl p-4 mb-8 flex items-center justify-between">
             <div className="flex-1">
@@ -90,7 +70,7 @@ export const HomeScreen: React.FC<{ onSelectCategory: (id: string) => void; onNa
               </div>
               <div className="flex gap-3">
                  <div className="w-6 h-6 rounded-full bg-gold text-teal text-[10px] font-bold flex items-center justify-center shrink-0">AI</div>
-                 <p className="text-xs text-teal font-bold italic tracking-tight">New: AI-powered Professional Job Briefs & Official Civic Notice Drafting!</p>
+                 <p className="text-xs text-teal font-bold italic tracking-tight">New: AI-powered Professional Job Briefs for better matching!</p>
               </div>
            </div>
         </div>
@@ -118,6 +98,58 @@ export const HomeScreen: React.FC<{ onSelectCategory: (id: string) => void; onNa
               </div>
             </motion.button>
           ))}
+        </div>
+
+        {/* Chitral Spotlight / Promotional Banners */}
+        <div className="mt-10 mb-6">
+          <div className="flex items-center justify-between mb-4 px-1">
+            <h3 className="font-bold text-lg text-teal">Chitral Spotlight</h3>
+            <span className="text-[10px] bg-gold/20 text-teal px-2 py-1 rounded-full font-bold uppercase tracking-tighter">Local Hub</span>
+          </div>
+          
+          <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar -mx-1 px-1">
+            {[
+              {
+                id: 'event1',
+                title: 'Kalash Chilam Joshi',
+                subtitle: 'Upcoming Festival',
+                image: 'https://images.unsplash.com/photo-1598300042247-d088f8ab3a91?w=600&h=400&fit=crop',
+                tag: 'Community',
+                color: 'bg-crimson'
+              },
+              {
+                id: 'biz1',
+                title: 'Mount View Hotel',
+                subtitle: 'Best Views in Town',
+                image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600&h=400&fit=crop',
+                tag: 'Business',
+                color: 'bg-teal'
+              },
+              {
+                id: 'biz2',
+                title: 'Traditional Crafts',
+                subtitle: 'Handmade in Chitral',
+                image: 'https://images.unsplash.com/photo-1513519245088-0e12902e35ca?w=600&h=400&fit=crop',
+                tag: 'Artisan',
+                color: 'bg-emerald-600'
+              }
+            ].map((banner) => (
+              <motion.div
+                key={banner.id}
+                whileHover={{ y: -5 }}
+                className="min-w-[280px] h-[160px] relative rounded-[32px] overflow-hidden shadow-lg shadow-slate-200/50"
+              >
+                <img src={banner.image} alt={banner.title} className="w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-5 flex flex-col justify-end">
+                  <span className={`${banner.color} text-white text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-md w-fit mb-2`}>
+                    {banner.tag}
+                  </span>
+                  <h4 className="text-white font-black text-lg leading-none mb-1">{banner.title}</h4>
+                  <p className="text-white/70 text-xs font-medium">{banner.subtitle}</p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
         </div>
 
         {/* Featured Service Providers */}

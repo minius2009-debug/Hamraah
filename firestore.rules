@@ -29,7 +29,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && (
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'none') == 'admin' ||
         request.auth.token.email == 'minius2009@gmail.com'
       );
     }
@@ -41,13 +41,13 @@ service cloud.firestore {
     // Entity Validations
     function isValidUser(data, isUpdate) {
       let requiredKeys = ['id', 'name', 'email', 'role', 'createdAt'];
-      let allowedKeys = ['id', 'name', 'email', 'role', 'photoURL', 'vehicle', 'experience', 'rating', 'reviewsCount', 'isVerified', 'createdAt', 'updatedAt'];
+      let allowedKeys = ['id', 'name', 'email', 'role', 'photoURL', 'vehicle', 'experience', 'rating', 'reviewsCount', 'isVerified', 'savedPlaces', 'createdAt', 'updatedAt'];
       return data.keys().hasAll(requiredKeys) &&
              data.keys().hasOnly(allowedKeys) &&
              data.id == request.auth.uid &&
              data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
              data.email is string &&
-             data.role in ['customer', 'driver', 'admin'] &&
+             data.role in ['customer', 'driver', 'provider', 'admin', null] &&
              (isUpdate ? data.createdAt == existing().createdAt : data.createdAt == request.time);
     }
 
@@ -71,7 +71,7 @@ service cloud.firestore {
 
     function isValidServiceRequest(data) {
       let requiredKeys = ['id', 'customerId', 'category', 'location', 'initialOfferPKR', 'status', 'createdAt', 'updatedAt'];
-      let allowedKeys = ['id', 'customerId', 'category', 'location', 'destination', 'description', 'voiceNoteUrl', 'initialOfferPKR', 'status', 'assignedDriverId', 'finalPricePKR', 'createdAt', 'updatedAt'];
+      let allowedKeys = ['id', 'customerId', 'category', 'location', 'destination', 'description', 'voiceNoteUrl', 'initialOfferPKR', 'status', 'assignedDriverId', 'finalPricePKR', 'preferences', 'createdAt', 'updatedAt'];
       return data.keys().hasAll(requiredKeys) &&
              data.keys().hasOnly(allowedKeys) &&
              data.customerId == request.auth.uid &&
@@ -79,6 +79,7 @@ service cloud.firestore {
              (data.get('destination', null) == null || (data.destination is string && data.destination.size() <= 200)) &&
              (data.get('description', null) == null || (data.description is string && data.description.size() <= 1000)) &&
              (data.get('assignedDriverId', null) == null || (data.assignedDriverId is string && data.assignedDriverId.size() <= 128)) &&
+             (data.get('preferences', null) == null || data.preferences is list) &&
              data.initialOfferPKR is number && data.initialOfferPKR > 0 &&
              data.status in ['pending', 'negotiating', 'in_progress', 'completed', 'cancelled'] &&
              data.createdAt == request.time &&
@@ -144,7 +145,7 @@ service cloud.firestore {
       allow create: if isSignedIn() && isValidUser(incoming(), false);
       allow update: if isSignedIn() && (
         isOwner(userId) || 
-        (incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'reviewsCount', 'updatedAt']) && existing().role == 'driver')
+        (incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'reviewsCount', 'updatedAt']) && existing().role in ['driver', 'provider'])
       );
 
       match /notifications/{notificationId} {
@@ -165,6 +166,7 @@ service cloud.firestore {
         // System/Admin
         isAdmin()
       ) && incoming().updatedAt == request.time;
+      allow delete: if isAdmin();
 
       match /messages/{messageId} {
         allow read: if isSignedIn() && (isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.customerId) || isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.assignedDriverId));
@@ -217,6 +219,11 @@ service cloud.firestore {
         allow create: if isSignedIn() && isValidId(messageId) && isValidChatMessage(incoming()) && 
                       (isOwner(get(/databases/$(database)/documents/chats/$(chatId)).data.customerId) || isOwner(get(/databases/$(database)/documents/chats/$(chatId)).data.driverId));
       }
+    }
+
+    match /chitral_updates/{updateId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
     }
   }
 }

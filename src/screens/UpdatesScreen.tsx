@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
-import { Megaphone, MapPin, Calendar, ExternalLink, RefreshCw } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Megaphone, MapPin, Calendar, ExternalLink, RefreshCw, Loader2 } from 'lucide-react';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 interface Update {
   id: string;
@@ -47,8 +49,28 @@ const MOCK_UPDATES: Update[] = [
 ];
 
 export const UpdatesScreen: React.FC = () => {
-  const [loading, setLoading] = useState(false);
-  const [updates, setUpdates] = useState<Update[]>(MOCK_UPDATES);
+  const [loading, setLoading] = useState(true);
+  const [updates, setUpdates] = useState<Update[]>([]);
+
+  useEffect(() => {
+    const q = query(collection(db, 'chitral_updates'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setUpdates(snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          title: data.title,
+          content: data.content,
+          category: data.category,
+          timestamp: data.createdAt?.toDate().toLocaleDateString() || 'Just now',
+          location: data.location
+        } as Update;
+      }));
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const handleRefresh = () => {
     setLoading(true);
@@ -83,42 +105,60 @@ export const UpdatesScreen: React.FC = () => {
       </div>
 
       <div className="space-y-6">
-        {updates.map((update, index) => (
-          <motion.div
-            key={update.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
-            className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm"
-          >
-            <div className="flex justify-between items-start mb-4">
-              <span className={`text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider ${getCategoryStyles(update.category)}`}>
-                {update.category}
-              </span>
-              <div className="flex items-center gap-1 text-[10px] text-slate-400 font-medium">
-                <Calendar size={12} />
-                {update.timestamp}
-              </div>
-            </div>
-
-            <h3 className="text-lg font-bold text-teal mb-2 leading-tight">{update.title}</h3>
-            <p className="text-sm text-slate-600 mb-4 leading-relaxed">
-              {update.content}
-            </p>
-
-            <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-              {update.location && (
-                <div className="flex items-center gap-2 text-slate-500">
-                  <MapPin size={14} className="text-crimson" />
-                  <span className="text-xs font-medium">{update.location}</span>
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-24">
+            <Loader2 size={40} className="text-teal animate-spin mb-4" />
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Fetching Real-time News...</p>
+          </div>
+        ) : (
+          <AnimatePresence mode="popLayout">
+            {updates.map((update, index) => (
+              <motion.div
+                key={update.id}
+                layout
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ delay: index * 0.05 }}
+                className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm"
+              >
+                <div className="flex justify-between items-start mb-4">
+                  <span className={`text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider ${getCategoryStyles(update.category)}`}>
+                    {update.category}
+                  </span>
+                  <div className="flex items-center gap-1 text-[10px] text-slate-400 font-medium">
+                    <Calendar size={12} />
+                    {update.timestamp}
+                  </div>
                 </div>
-              )}
-              <button className="text-teal text-xs font-bold flex items-center gap-1 hover:underline">
-                View Details <ExternalLink size={12} />
-              </button>
-            </div>
-          </motion.div>
-        ))}
+
+                <h3 className="text-lg font-bold text-teal mb-2 leading-tight">{update.title}</h3>
+                <p className="text-sm text-slate-600 mb-4 leading-relaxed whitespace-pre-line">
+                  {update.content}
+                </p>
+
+                <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                  {update.location && (
+                    <div className="flex items-center gap-2 text-slate-500">
+                      <MapPin size={14} className="text-crimson" />
+                      <span className="text-xs font-medium">{update.location}</span>
+                    </div>
+                  )}
+                  <button className="text-teal text-xs font-bold flex items-center gap-1 hover:underline">
+                    View Source <ExternalLink size={12} />
+                  </button>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        )}
+        
+        {!loading && updates.length === 0 && (
+          <div className="text-center py-24 bg-slate-50 rounded-[40px] border border-dashed border-slate-200">
+             <Megaphone size={40} className="mx-auto text-slate-200 mb-4" />
+             <p className="text-slate-400 font-bold italic">No updates available at the moment.</p>
+          </div>
+        )}
       </div>
     </div>
   );

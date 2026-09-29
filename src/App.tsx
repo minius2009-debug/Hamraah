@@ -3,7 +3,6 @@ import { AuthProvider } from './context/AuthContext';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
 import { HomeScreen } from './screens/HomeScreen';
-import { CivicScreen } from './screens/CivicScreen';
 import { BookingScreen } from './screens/BookingScreen';
 import { NotificationsScreen } from './screens/NotificationsScreen';
 import { JobsScreen } from './screens/JobsScreen';
@@ -11,22 +10,30 @@ import { ProfileScreen } from './screens/ProfileScreen';
 import { SearchScreen } from './screens/SearchScreen';
 import { EmergencyScreen } from './screens/EmergencyScreen';
 import { UpdatesScreen } from './screens/UpdatesScreen';
+import { OnboardingScreen } from './screens/OnboardingScreen';
+import { ProviderDashboard } from './screens/ProviderDashboard';
+import { CustomerDashboard } from './screens/CustomerDashboard';
+import { AdminDashboard } from './screens/AdminDashboard';
 import { NotificationToaster } from './components/NotificationToaster';
 import { ConnectionStatus } from './components/ConnectionStatus';
+import { useAuth } from './context/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Home, ClipboardList, Megaphone, User, BellRing, PhoneCall, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Home, ClipboardList, Megaphone, User, BellRing, PhoneCall, ChevronLeft, ChevronRight, Loader2, LayoutDashboard, Shield } from 'lucide-react';
+import { APIProvider } from '@vis.gl/react-google-maps';
 
 const Sidebar: React.FC<{ activeTab: string; setActiveTab: (tab: string) => void }> = ({ activeTab, setActiveTab }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const { profile } = useAuth();
+  const isProvider = profile?.role === 'provider';
 
   const tabs = [
-    { id: 'home', label: 'Services', icon: Home },
-    { id: 'jobs', label: 'Market', icon: ClipboardList },
-    { id: 'civic', label: 'Protest', icon: Megaphone },
+    { id: 'home', label: 'Services', icon: Home, hide: isProvider },
+    { id: 'jobs', label: isProvider ? 'Dashboard' : 'Bookings', icon: isProvider ? LayoutDashboard : ClipboardList },
     { id: 'updates', label: 'Updates', icon: BellRing },
     { id: 'emergency', label: 'Emergency', icon: PhoneCall },
+    { id: 'admin', label: 'Moderation', icon: Shield, hide: profile?.role !== 'admin' },
     { id: 'profile', label: 'Profile', icon: User },
-  ];
+  ].filter(t => !t.hide);
 
   return (
     <aside className={`hidden md:flex flex-col h-screen sticky top-0 bg-white border-r border-slate-200 p-6 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-24' : 'w-64'}`}>
@@ -92,10 +99,47 @@ const Sidebar: React.FC<{ activeTab: string; setActiveTab: (tab: string) => void
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('home');
+  return (
+    <AuthProvider>
+      <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}>
+        <AppContent />
+      </APIProvider>
+    </AuthProvider>
+  );
+}
+
+const AppContent: React.FC = () => {
+  const { user, profile, loading } = useAuth();
+  const [activeTab, setActiveTab] = useState(profile?.role === 'provider' ? 'jobs' : 'home');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (profile?.role === 'provider') {
+      setActiveTab('jobs');
+    }
+  }, [profile?.role]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
+        <motion.div
+          animate={{ scale: [1, 1.1, 1], opacity: [0.5, 1, 0.5] }}
+          transition={{ repeat: Infinity, duration: 2 }}
+          className="w-20 h-20 bg-teal/10 rounded-[24px] flex items-center justify-center mb-6"
+        >
+          <img src="/src/assets/images/hamrah_logo_1790495411663.jpg" alt="" className="w-12 h-12 rounded-xl" />
+        </motion.div>
+        <Loader2 className="animate-spin text-teal mb-4" size={32} />
+        <p className="text-sm font-bold text-teal tracking-widest uppercase">Hamraah Chitral</p>
+      </div>
+    );
+  }
+
+  if (!user || !profile?.role) {
+    return <OnboardingScreen />;
+  }
 
   const renderScreen = () => {
     if (searchQuery.trim()) {
@@ -104,10 +148,6 @@ export default function App() {
           queryText={searchQuery} 
           onSelectCategory={(id) => {
             setSelectedCategory(id);
-            setSearchQuery('');
-          }}
-          onSelectIssue={(id) => {
-            setActiveTab('civic');
             setSearchQuery('');
           }}
         />
@@ -145,18 +185,16 @@ export default function App() {
       case 'home': return (
         <HomeScreen 
           onSelectCategory={(id) => setSelectedCategory(id)} 
-          onNavigateToProtest={() => setActiveTab('civic')}
         />
       );
-      case 'jobs': return <JobsScreen />;
-      case 'civic': return <CivicScreen />;
+      case 'jobs': return profile?.role === 'provider' ? <ProviderDashboard /> : <CustomerDashboard />;
       case 'updates': return <UpdatesScreen />;
       case 'emergency': return <EmergencyScreen />;
+      case 'admin': return <AdminDashboard />;
       case 'profile': return <ProfileScreen />;
       default: return (
         <HomeScreen 
           onSelectCategory={(id) => setSelectedCategory(id)} 
-          onNavigateToProtest={() => setActiveTab('civic')}
         />
       );
     }
@@ -168,21 +206,20 @@ export default function App() {
     if (selectedCategory) return 'Booking Service';
     switch (activeTab) {
       case 'home': return 'Home';
-      case 'jobs': return 'Job Marketplace';
-      case 'civic': return 'Community Action';
+      case 'jobs': return profile?.role === 'provider' ? 'Provider Dashboard' : 'My Bookings';
       case 'updates': return 'Chitral Updates';
       case 'emergency': return 'Emergency Hub';
+      case 'admin': return 'Admin Panel';
       case 'profile': return 'My Account';
       default: return 'Hamraah';
     }
   };
 
   return (
-    <AuthProvider>
+    <div className="min-h-screen bg-background flex flex-col md:flex-row max-w-[1440px] mx-auto">
       <NotificationToaster />
       <ConnectionStatus />
-      <div className="min-h-screen bg-background flex flex-col md:flex-row max-w-[1440px] mx-auto">
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
         
         <div className="flex-1 flex flex-col min-h-screen relative overflow-x-hidden border-x border-slate-100 bg-white">
           {!selectedCategory && !isNotificationsOpen && (
@@ -241,7 +278,6 @@ export default function App() {
            </div>
         </aside>
       </div>
-    </AuthProvider>
   );
-}
+};
 

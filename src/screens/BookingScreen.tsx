@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, doc, setDoc, getDoc, query, where, orderBy, onSnapshot, serverTimestamp, addDoc, updateDoc, increment } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, MapPin, Mic, Send, Banknote, Navigation, Loader2, Radio, Star, ShieldCheck, Car, Clock, MessageSquare, X, Info, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Mic, Send, Banknote, Navigation, Loader2, Radio, Star, ShieldCheck, Car, Clock, MessageSquare, X, Info, CheckCircle2, Home, Briefcase, BookmarkPlus, VolumeX, Wind, Luggage, Sparkles as SparklesIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Map, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
 
 interface BookingScreenProps {
   categoryId: string;
@@ -60,6 +61,38 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
   const [rideCompleted, setRideCompleted] = useState(false);
   const [estimatedDistance, setEstimatedDistance] = useState<number | null>(null);
   const [estimatedPrice, setEstimatedPrice] = useState<number | null>(null);
+  const { profile } = useAuth();
+  const [showPrefsModal, setShowPrefsModal] = useState(false);
+  const [preferences, setPreferences] = useState<string[]>([]);
+  
+  const [driverLocation, setDriverLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [userCoords, setUserCoords] = useState<{lat: number, lng: number} | null>(null);
+
+  const PREFERENCE_OPTIONS = [
+    { id: 'quiet', label: 'Quiet Ride', icon: VolumeX },
+    { id: 'luggage', label: 'Extra Luggage', icon: Luggage },
+    { id: 'ac', label: 'AC Required', icon: Wind },
+    { id: 'new', label: 'New Vehicle', icon: SparklesIcon },
+  ];
+
+  const togglePreference = (id: string) => {
+    setPreferences(prev => 
+      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
+    );
+  };
+  
+  const handleSavePlace = async (type: 'home' | 'work', val: string) => {
+    if (!user || !val.trim()) return;
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        [`savedPlaces.${type}`]: val,
+        updatedAt: serverTimestamp()
+      });
+      alert(`Saved as ${type === 'home' ? 'Home' : 'Work'}!`);
+    } catch (error) {
+      console.error("Save place error:", error);
+    }
+  };
 
   // Price Calculation Logic
   useEffect(() => {
@@ -103,6 +136,25 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
       setEstimatedPrice(null);
     }
   }, [location, destination, activeCategory]);
+
+  // Real-time tracking listener
+  useEffect(() => {
+    if (!selectedDriver) return;
+    const unsub = onSnapshot(doc(db, 'users', selectedDriver.id), (doc) => {
+      const data = doc.data();
+      if (data?.lastLocation) {
+        setDriverLocation(data.lastLocation);
+      }
+    });
+    return () => unsub();
+  }, [selectedDriver]);
+
+  useEffect(() => {
+    if (location.includes('(')) {
+      const match = location.match(/\(([^,]+),\s*([^)]+)\)/);
+      if (match) setUserCoords({ lat: parseFloat(match[1]), lng: parseFloat(match[2]) });
+    }
+  }, [location]);
 
   // Real-time tracking simulator
   useEffect(() => {
@@ -330,8 +382,9 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
         destination: isTransport ? destination : null,
         description,
         initialOfferPKR: numericOffer,
-        assignedDriverId: selectedDriver?.id || null,
-        status: selectedDriver ? 'negotiating' : 'pending',
+        assignedDriverId: null, // Always broadcast to all providers
+        status: 'pending',
+        preferences,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
@@ -463,8 +516,8 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
       {user && ['drivers', 'bikes', 'taxis', 'rickshaws', 'cars'].includes(activeCategory) && (
         <div className="px-6 mb-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-teal text-sm uppercase tracking-wider">Available {categoryLabel}s</h3>
-            <span className="text-[10px] bg-teal/5 text-teal px-2 py-1 rounded-lg font-bold">Live Valley Network</span>
+            <h3 className="font-bold text-teal text-sm uppercase tracking-wider">Nearby {categoryLabel}s</h3>
+            <span className="text-[10px] bg-emerald-500/10 text-emerald-600 px-2 py-1 rounded-lg font-bold">Live Network Strength</span>
           </div>
           
           {loadingDrivers ? (
@@ -473,84 +526,33 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
             </div>
           ) : drivers.length === 0 ? (
             <div className="bg-slate-50 rounded-3xl p-8 text-center border border-dashed border-slate-200">
-               <p className="text-xs text-slate-500 italic">No {categoryLabel}s currently online in your area.</p>
+               <p className="text-xs text-slate-500 italic">No {categoryLabel}s currently online. You can still post your request!</p>
             </div>
           ) : (
-            <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
+            <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
               {drivers.map((driver) => (
-                <motion.div 
+                <div 
                   key={driver.id}
-                  whileTap={{ scale: 0.98 }}
-                  className="min-w-[280px] bg-white border border-slate-100 rounded-[32px] p-5 shadow-sm"
+                  className="min-w-[140px] bg-slate-50 border border-slate-100 rounded-3xl p-4 text-center"
                 >
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="relative">
-                      <img 
-                        src={driver.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${driver.id}`} 
-                        alt={driver.name} 
-                        className="w-14 h-14 rounded-2xl object-cover bg-slate-100" 
-                      />
-                      {driver.isVerified && (
-                        <div className="absolute -bottom-1 -right-1 bg-emerald-500 text-white p-1.5 rounded-full border-2 border-white shadow-lg" title="Identity Verified">
-                          <ShieldCheck size={12} />
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <div className="flex flex-col gap-0.5">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-teal leading-tight">{driver.name}</h4>
-                          {driver.isVerified && (
-                             <span className="text-[7px] bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-full font-black uppercase border border-emerald-100">
-                               ID Verified
-                             </span>
-                          )}
-                        </div>
-                        {driver.isVerified && <span className="text-[8px] text-emerald-500 font-bold">Verification Complete 100%</span>}
-                      </div>
-                      <div className="flex items-center gap-1 mt-1">
-                        <Star size={12} className="fill-gold text-gold" />
-                        <span className="text-xs font-bold text-teal">Rating: {driver.rating || '5.0'}</span>
-                        <span className="text-[10px] text-slate-400">({driver.reviewsCount || 0} reviews)</span>
-                      </div>
-                    </div>
+                  <div className="relative w-12 h-12 mx-auto mb-2">
+                    <img 
+                      src={driver.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${driver.id}`} 
+                      alt={driver.name} 
+                      className="w-full h-full rounded-2xl object-cover bg-white" 
+                    />
+                    <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full" />
                   </div>
-
-                  <div className="space-y-3 mb-4">
-                    <div className="flex items-center gap-3 text-slate-500">
-                      <div className="w-8 h-8 bg-slate-50 rounded-xl flex items-center justify-center">
-                        <Car size={16} />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-[10px] text-slate-400 uppercase font-bold leading-none mb-1">Vehicle</p>
-                        <p className="text-xs font-bold text-teal leading-none">{driver.vehicle || 'Standard (4x4)'}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 text-slate-500">
-                      <div className="w-8 h-8 bg-slate-50 rounded-xl flex items-center justify-center">
-                        <Clock size={16} />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-[10px] text-slate-400 uppercase font-bold leading-none mb-1">Experience</p>
-                        <p className="text-xs font-bold text-teal leading-none">{driver.experience || 'Experienced'} in Chitral</p>
-                      </div>
-                    </div>
+                  <p className="text-[10px] font-bold text-teal truncate">{driver.name}</p>
+                  <div className="flex items-center justify-center gap-1 mt-0.5">
+                    <Star size={8} className="fill-gold text-gold" />
+                    <span className="text-[8px] font-bold text-teal">{driver.rating || '5.0'}</span>
                   </div>
-
-                  <button 
-                    onClick={() => handleSelectDriver(driver)}
-                    className={`w-full py-3 rounded-xl text-xs font-bold transition-all ${
-                      selectedDriver?.id === driver.id 
-                        ? 'bg-emerald-500 text-white' 
-                        : 'bg-slate-50 text-teal hover:bg-teal hover:text-white'
-                    }`}
-                  >
-                    {selectedDriver?.id === driver.id ? 'Selected' : 'Connect with Driver'}
-                  </button>
-                </motion.div>
+                </div>
               ))}
             </div>
           )}
+          <p className="text-[10px] text-slate-400 mt-2 px-1 italic">Your request will be broadcast to all nearby {categoryLabel}s instantly.</p>
         </div>
       )}
 
@@ -594,63 +596,40 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
               </div>
             </div>
 
-            {/* Tracking Visualization */}
-            <div className="relative h-24 bg-black/10 rounded-[24px] p-4 flex flex-col justify-center">
-              <div className="flex justify-between items-center mb-2 px-2">
-                <div className="flex flex-col items-center gap-1">
-                  <div className="w-2 h-2 bg-white rounded-full shadow-[0_0_8px_white]" />
-                  <span className="text-[8px] font-bold opacity-60 uppercase">Driver</span>
-                </div>
-                <div className="flex flex-col items-center gap-1">
-                  <div className="w-2 h-2 bg-gold rounded-full shadow-[0_0_8px_#FFD700]" />
-                  <span className="text-[8px] font-bold opacity-60 uppercase">You</span>
-                </div>
-              </div>
-              
-              <div className="relative h-1 bg-white/20 rounded-full mx-2">
-                {/* Route Line */}
-                <div className="absolute inset-0 bg-white/10 rounded-full overflow-hidden">
-                  <div className="h-full w-full bg-[repeating-linear-gradient(90deg,transparent,transparent_8px,rgba(255,255,255,0.2)_8px,rgba(255,255,255,0.2)_16px)]" />
-                </div>
+            {/* Real-time Google Map Tracking */}
+            <div className="relative h-64 bg-slate-100 rounded-[32px] overflow-hidden border-4 border-white/20 shadow-inner">
+              <Map
+                defaultZoom={15}
+                defaultCenter={userCoords || { lat: 35.8511, lng: 71.7864 }}
+                center={driverLocation || userCoords}
+                mapId="DEMO_MAP_ID"
+                disableDefaultUI={true}
+                internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+              >
+                {userCoords && (
+                  <AdvancedMarker position={userCoords} title="Your Location">
+                    <Pin background={'#115E59'} borderColor={'#FFFFFF'} glyphColor={'#FFFFFF'} />
+                  </AdvancedMarker>
+                )}
                 
-                {/* Progress Fill */}
-                <motion.div 
-                  className="absolute left-0 top-0 h-full bg-gold rounded-full"
-                  animate={{ width: `${trackingProgress}%` }}
-                  transition={{ type: "spring", stiffness: 50 }}
-                />
-
-                {/* Moving Driver Icon */}
-                <motion.div 
-                  className="absolute top-1/2 -translate-y-1/2 -ml-5"
-                  animate={{ left: `${trackingProgress}%` }}
-                  transition={{ type: "spring", stiffness: 50 }}
-                >
-                  <div className="w-10 h-10 bg-white p-1 rounded-2xl shadow-xl border-2 border-white transform">
-                    <img 
-                      src={
-                        activeCategory === 'cars' ? '/src/assets/images/car_rental_hero_1790495430237.jpg' :
-                        activeCategory === 'bikes' ? '/src/assets/images/bike_rental_hero_1790668396314.jpg' :
-                        activeCategory === 'taxis' ? '/src/assets/images/taxi_booking_hero_1790668419818.jpg' :
-                        '/src/assets/images/rickshaw_service_hero_1790668434852.jpg'
-                      } 
-                      alt="" 
-                      className="w-full h-full object-cover rounded-xl" 
-                    />
-                  </div>
-                  {/* Pulse Effect */}
-                  <div className="absolute inset-0 bg-white rounded-2xl animate-ping opacity-20 pointer-events-none" />
-                </motion.div>
-              </div>
-
-              <div className="mt-4 flex justify-between items-center px-1">
+                {driverLocation && (
+                  <AdvancedMarker position={driverLocation} title={selectedDriver.name}>
+                    <div className="relative">
+                      <div className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center p-1 border-2 border-gold">
+                        <Car size={20} className="text-teal" />
+                      </div>
+                      <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white animate-pulse" />
+                    </div>
+                  </AdvancedMarker>
+                )}
+              </Map>
+              
+              <div className="absolute bottom-4 left-4 right-4 flex justify-between items-center bg-white/90 backdrop-blur-md p-3 rounded-2xl shadow-lg border border-white/50">
                 <div className="flex items-center gap-2">
-                   <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-                   <span className="text-[9px] font-bold tracking-tight italic">Live GPS Signal Active</span>
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                  <span className="text-[10px] font-black text-teal uppercase tracking-tight">Live GPS Tracking</span>
                 </div>
-                <span className="text-[9px] font-black text-gold uppercase tracking-tighter">
-                  {trackingProgress > 90 ? 'Nearby' : `${Math.round(100 - trackingProgress)}% to Pickup`}
-                </span>
+                <span className="text-[10px] font-bold text-slate-500">Chitral, Pakistan</span>
               </div>
             </div>
 
@@ -668,17 +647,39 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
           <div className="space-y-1">
             <div className="flex justify-between items-center px-1">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{isTransport ? 'From (Pickup)' : 'Location'}</label>
-              <button 
-                type="button"
-                onClick={() => handleUseCurrentLocation('pickup')}
-                disabled={locating}
-                className="flex items-center gap-1 text-[10px] font-bold text-teal hover:text-crimson transition-colors disabled:opacity-50"
-              >
-                {locating ? <Loader2 size={12} className="animate-spin" /> : <Navigation size={12} />}
-                Use My Location
-              </button>
+              <div className="flex items-center gap-2">
+                {profile?.savedPlaces?.home && (
+                  <button 
+                    type="button"
+                    onClick={() => setLocation(profile.savedPlaces!.home!)}
+                    className="p-1.5 bg-teal/5 text-teal rounded-lg hover:bg-teal/10 transition-colors"
+                    title="Select Home"
+                  >
+                    <Home size={12} />
+                  </button>
+                )}
+                {profile?.savedPlaces?.work && (
+                  <button 
+                    type="button"
+                    onClick={() => setLocation(profile.savedPlaces!.work!)}
+                    className="p-1.5 bg-teal/5 text-teal rounded-lg hover:bg-teal/10 transition-colors"
+                    title="Select Work"
+                  >
+                    <Briefcase size={12} />
+                  </button>
+                )}
+                <button 
+                  type="button"
+                  onClick={() => handleUseCurrentLocation('pickup')}
+                  disabled={locating}
+                  className="flex items-center gap-1 text-[10px] font-bold text-teal hover:text-crimson transition-colors disabled:opacity-50"
+                >
+                  {locating ? <Loader2 size={12} className="animate-spin" /> : <Navigation size={12} />}
+                  Use My Location
+                </button>
+              </div>
             </div>
-            <div className="relative">
+            <div className="relative group">
               <input 
                 required
                 value={location}
@@ -687,12 +688,20 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
                 className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-12 text-sm focus:outline-none focus:ring-2 focus:ring-teal/50"
               />
               <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-crimson" size={18} />
-              {location.includes('(') && (
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[8px] font-black text-emerald-500 bg-emerald-50 px-2 py-1 rounded-full uppercase">
-                  <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse" />
-                  GPS Locked
-                </div>
-              )}
+              
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                {location && (
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button type="button" onClick={() => handleSavePlace('home', location)} className="p-1.5 hover:bg-teal/5 rounded-lg text-slate-400 hover:text-teal transition-colors" title="Save as Home"><BookmarkPlus size={14} /></button>
+                  </div>
+                )}
+                {location.includes('(') && (
+                  <div className="flex items-center gap-1 text-[8px] font-black text-emerald-500 bg-emerald-50 px-2 py-1 rounded-full uppercase">
+                    <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse" />
+                    GPS Locked
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -700,17 +709,39 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
             <div className="space-y-1">
               <div className="flex justify-between items-center px-1">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">To (Destination)</label>
-                <button 
-                  type="button"
-                  onClick={() => handleUseCurrentLocation('destination')}
-                  disabled={locatingDest}
-                  className="flex items-center gap-1 text-[10px] font-bold text-teal hover:text-crimson transition-colors disabled:opacity-50"
-                >
-                  {locatingDest ? <Loader2 size={12} className="animate-spin" /> : <Navigation size={12} />}
-                  Use My Location
-                </button>
+                <div className="flex items-center gap-2">
+                  {profile?.savedPlaces?.home && (
+                    <button 
+                      type="button"
+                      onClick={() => setDestination(profile.savedPlaces!.home!)}
+                      className="p-1.5 bg-teal/5 text-teal rounded-lg hover:bg-teal/10 transition-colors"
+                      title="Select Home"
+                    >
+                      <Home size={12} />
+                    </button>
+                  )}
+                  {profile?.savedPlaces?.work && (
+                    <button 
+                      type="button"
+                      onClick={() => setDestination(profile.savedPlaces!.work!)}
+                      className="p-1.5 bg-teal/5 text-teal rounded-lg hover:bg-teal/10 transition-colors"
+                      title="Select Work"
+                    >
+                      <Briefcase size={12} />
+                    </button>
+                  )}
+                  <button 
+                    type="button"
+                    onClick={() => handleUseCurrentLocation('destination')}
+                    disabled={locatingDest}
+                    className="flex items-center gap-1 text-[10px] font-bold text-teal hover:text-crimson transition-colors disabled:opacity-50"
+                  >
+                    {locatingDest ? <Loader2 size={12} className="animate-spin" /> : <Navigation size={12} />}
+                    Use My Location
+                  </button>
+                </div>
               </div>
-              <div className="relative">
+              <div className="relative group">
                 <input 
                   required
                   value={destination}
@@ -719,12 +750,20 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
                   className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-12 text-sm focus:outline-none focus:ring-2 focus:ring-teal/50"
                 />
                 <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={18} />
-                {destination.includes('(') && (
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[8px] font-black text-emerald-500 bg-emerald-50 px-2 py-1 rounded-full uppercase">
-                    <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse" />
-                    GPS Locked
-                  </div>
-                )}
+                
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                  {destination && (
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button type="button" onClick={() => handleSavePlace('work', destination)} className="p-1.5 hover:bg-teal/5 rounded-lg text-slate-400 hover:text-teal transition-colors" title="Save as Work"><BookmarkPlus size={14} /></button>
+                    </div>
+                  )}
+                  {destination.includes('(') && (
+                    <div className="flex items-center gap-1 text-[8px] font-black text-emerald-500 bg-emerald-50 px-2 py-1 rounded-full uppercase">
+                      <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse" />
+                      GPS Locked
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -775,9 +814,21 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
           </div>
 
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
-              {activeCategory === 'cars' ? 'Rental Duration (Days)' : isTransport ? 'Price Offer (PKR)' : 'Your Initial Offer (PKR)'}
-            </label>
+            <div className="flex justify-between items-center px-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                {activeCategory === 'cars' ? 'Rental Duration (Days)' : isTransport ? 'Price Offer (PKR)' : 'Your Initial Offer (PKR)'}
+              </label>
+              {isTransport && (
+                <button 
+                  type="button"
+                  onClick={() => setShowPrefsModal(true)}
+                  className="flex items-center gap-1 text-[10px] font-bold text-teal bg-teal/5 px-2 py-1 rounded-lg border border-teal/10 hover:bg-teal/10 transition-colors"
+                >
+                  <Wind size={12} />
+                  {preferences.length > 0 ? `${preferences.length} Prefs Selected` : 'Ride Preferences'}
+                </button>
+              )}
+            </div>
             <div className="relative">
               <input 
                 required
@@ -803,6 +854,59 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
         </form>
       </div>
       )}
+      {/* Preferences Modal */}
+      <AnimatePresence>
+        {showPrefsModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              className="bg-white w-full max-w-lg rounded-t-[32px] sm:rounded-[32px] p-6 pb-12 sm:pb-6 shadow-2xl"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold text-teal">Ride Preferences</h3>
+                <button onClick={() => setShowPrefsModal(false)} className="p-2 bg-slate-100 rounded-full">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-8">
+                {PREFERENCE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => togglePreference(opt.id)}
+                    className={`flex flex-col items-center gap-3 p-4 rounded-[24px] border-2 transition-all ${
+                      preferences.includes(opt.id) 
+                        ? 'bg-teal border-teal text-white shadow-lg shadow-teal/20 scale-[1.02]' 
+                        : 'bg-slate-50 border-transparent text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className={`p-3 rounded-2xl ${preferences.includes(opt.id) ? 'bg-white/20' : 'bg-white shadow-sm'}`}>
+                      <opt.icon size={24} />
+                    </div>
+                    <span className="text-xs font-bold">{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              <button 
+                onClick={() => setShowPrefsModal(false)}
+                className="w-full bg-teal text-white py-4 rounded-2xl font-bold shadow-lg shadow-teal/20"
+              >
+                Confirm Preferences
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Rating Modal */}
       <AnimatePresence>
         {showRatingModal && selectedDriver && (

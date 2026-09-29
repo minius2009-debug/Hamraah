@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Shield, Globe, LogOut, RefreshCcw, X, Sparkles, Loader2 } from 'lucide-react';
+import { Shield, Globe, LogOut, RefreshCcw, X, Sparkles, Loader2, Trash2, AlertTriangle } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 
 export const ProfileScreen: React.FC = () => {
-  const { profile, user, logout, login, isLoggingIn } = useAuth();
+  const { profile, user, logout, login, isLoggingIn, resetAccount } = useAuth();
 
   const [newSkill, setNewSkill] = useState('');
   const [isEditingSkills, setIsEditingSkills] = useState(false);
@@ -50,7 +50,7 @@ export const ProfileScreen: React.FC = () => {
         experience,
         vehicle
       });
-      alert("Driver info updated!");
+      alert("Professional info updated!");
     } catch (error) {
       console.error("Save error:", error);
     } finally {
@@ -82,19 +82,6 @@ export const ProfileScreen: React.FC = () => {
       window.location.reload();
     } catch (error) {
       console.error("Portfolio error:", error);
-    }
-  };
-
-  const toggleRole = async () => {
-    if (!user || !profile) return;
-    const newRole = profile.role === 'customer' ? 'driver' : 'customer';
-    try {
-      await updateDoc(doc(db, 'users', user.uid), {
-        role: newRole
-      });
-      window.location.reload(); 
-    } catch (error) {
-      console.error("Failed to switch role:", error);
     }
   };
 
@@ -151,21 +138,17 @@ export const ProfileScreen: React.FC = () => {
           <p className="text-slate-500 text-sm mb-4">{profile?.email}</p>
           <div className="flex flex-col items-center gap-3">
             <span className="inline-block bg-teal text-white text-[10px] font-bold uppercase tracking-widest px-4 py-1 rounded-full">
-              {profile?.role === 'driver' ? 'Driver Mode' : 'Customer Mode'}
+              {profile?.role === 'provider' ? 'Professional Provider' : 'Service Taker'}
             </span>
             
-            <button 
-              onClick={toggleRole}
-              className="flex items-center gap-2 text-[10px] font-bold text-gold hover:text-gold/80 transition-colors bg-gold/5 px-4 py-2 rounded-xl border border-gold/10"
-            >
-              <RefreshCcw size={12} />
-              Switch to {profile?.role === 'customer' ? 'Driver' : 'Customer'}
-            </button>
+            <p className="text-[10px] text-slate-400 font-medium px-4">
+              Your role is permanently tied to this profile. To change your role, you must reset your account.
+            </p>
           </div>
         </div>
       )}
 
-      {user && profile?.role === 'driver' && (
+      {user && profile?.role === 'provider' && (
         <div className="grid grid-cols-2 gap-4 mb-8">
            <div className="bg-emerald-50 p-6 rounded-[32px] border border-emerald-100 shadow-sm">
               <span className="block text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-1">Total Trips</span>
@@ -178,9 +161,9 @@ export const ProfileScreen: React.FC = () => {
         </div>
       )}
 
-      {profile?.role === 'driver' && (
+      {profile?.role === 'provider' && (
         <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm mb-8">
-           <h3 className="font-bold text-teal mb-4">Driver Profile</h3>
+           <h3 className="font-bold text-teal mb-4">Professional Profile</h3>
            <div className="space-y-4">
               <div className="space-y-1">
                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Professional Bio</label>
@@ -256,10 +239,10 @@ export const ProfileScreen: React.FC = () => {
         </div>
       )}
 
-      {profile?.role === 'driver' && (
+      {profile?.role === 'provider' && (
         <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm mb-8">
            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-teal">Driver Skills</h3>
+              <h3 className="font-bold text-teal">Professional Skills</h3>
               <button 
                 onClick={() => setIsEditingSkills(!isEditingSkills)}
                 className="text-xs font-bold text-gold"
@@ -334,6 +317,41 @@ export const ProfileScreen: React.FC = () => {
           </div>
           <span className="font-bold text-crimson">Logout from App</span>
         </button>
+
+        {/* Developer/Admin Mode Toggle (Secret feature for ease of testing) */}
+        <div className="pt-8">
+           <button 
+             onDoubleClick={async () => {
+               if (!user || !profile) return;
+               const newRole = profile.role === 'admin' ? 'customer' : 'admin';
+               await updateDoc(doc(db, 'users', user.uid), { role: newRole });
+               alert(`Admin mode ${newRole === 'admin' ? 'activated' : 'deactivated'}. Please refresh to see the Admin Panel.`);
+               window.location.reload();
+             }}
+             className="w-full py-4 text-[10px] font-black text-slate-300 uppercase tracking-widest hover:text-teal transition-colors"
+           >
+             Double-tap to {profile?.role === 'admin' ? 'exit' : 'enter'} Admin Mode
+           </button>
+        </div>
+
+        <div className="pt-12">
+          <div className="bg-red-50 rounded-[32px] p-8 border border-red-100">
+            <div className="flex items-center gap-3 mb-4 text-red-600">
+              <AlertTriangle size={20} />
+              <h4 className="font-black uppercase tracking-tight text-sm">Danger Zone</h4>
+            </div>
+            <p className="text-xs text-red-600/70 mb-6 leading-relaxed font-medium">
+              Deleting your account will permanently remove your profile, ratings, and role. You can create a new account afterwards if you wish to change your role.
+            </p>
+            <button 
+              onClick={resetAccount}
+              className="w-full bg-red-600 text-white py-4 rounded-2xl flex items-center justify-center gap-3 font-black text-xs shadow-lg shadow-red-600/20 active:scale-[0.98] transition-transform"
+            >
+              <Trash2 size={16} />
+              DELETE & RESET PROFILE
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
