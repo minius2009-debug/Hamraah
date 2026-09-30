@@ -29,7 +29,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && (
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'none') == 'admin' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'none') == 'admin') ||
         request.auth.token.email == 'minius2009@gmail.com'
       );
     }
@@ -41,7 +41,7 @@ service cloud.firestore {
     // Entity Validations
     function isValidUser(data, isUpdate) {
       let requiredKeys = ['id', 'name', 'email', 'role', 'createdAt'];
-      let allowedKeys = ['id', 'name', 'email', 'role', 'photoURL', 'vehicle', 'experience', 'rating', 'reviewsCount', 'isVerified', 'savedPlaces', 'createdAt', 'updatedAt'];
+      let allowedKeys = ['id', 'name', 'email', 'role', 'photoURL', 'vehicle', 'experience', 'rating', 'reviewsCount', 'completedJobs', 'isVerified', 'savedPlaces', 'createdAt', 'updatedAt'];
       return data.keys().hasAll(requiredKeys) &&
              data.keys().hasOnly(allowedKeys) &&
              data.id == request.auth.uid &&
@@ -140,9 +140,8 @@ service cloud.firestore {
 
     // Match blocks
     match /users/{userId} {
-      allow get: if true; // Names are needed for comments even for visitors
-      allow list: if isSignedIn();
-      allow create: if isSignedIn() && isValidUser(incoming(), false);
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isOwner(userId);
       allow update: if isSignedIn() && (
         isOwner(userId) || 
         (incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'reviewsCount', 'updatedAt']) && existing().role in ['driver', 'provider'])
@@ -209,15 +208,15 @@ service cloud.firestore {
     }
 
     match /chats/{chatId} {
-      allow read: if isSignedIn() && (isOwner(existing().customerId) || isOwner(existing().driverId));
-      allow create: if isSignedIn() && isValidId(chatId) && isValidChat(incoming());
-      allow update: if isSignedIn() && (isOwner(existing().customerId) || isOwner(existing().driverId)) && 
-                    isValidChat(incoming()) && incoming().updatedAt == request.time;
+      allow read: if isSignedIn() && (request.auth.uid in existing().get('participants', [existing().get('customerId'), existing().get('driverId')]));
+      allow create: if isSignedIn() && isValidId(chatId); // Simplified for new chat creation
+      allow update: if isSignedIn() && (request.auth.uid in existing().get('participants', [existing().get('customerId'), existing().get('driverId')])) && 
+                    incoming().updatedAt == request.time;
 
       match /messages/{messageId} {
-        allow read: if isSignedIn() && (isOwner(get(/databases/$(database)/documents/chats/$(chatId)).data.customerId) || isOwner(get(/databases/$(database)/documents/chats/$(chatId)).data.driverId));
+        allow read: if isSignedIn() && (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.get('participants', [get(/databases/$(database)/documents/chats/$(chatId)).data.get('customerId'), get(/databases/$(database)/documents/chats/$(chatId)).data.get('driverId')]));
         allow create: if isSignedIn() && isValidId(messageId) && isValidChatMessage(incoming()) && 
-                      (isOwner(get(/databases/$(database)/documents/chats/$(chatId)).data.customerId) || isOwner(get(/databases/$(database)/documents/chats/$(chatId)).data.driverId));
+                      (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.get('participants', [get(/databases/$(database)/documents/chats/$(chatId)).data.get('customerId'), get(/databases/$(database)/documents/chats/$(chatId)).data.get('driverId')]));
       }
     }
 

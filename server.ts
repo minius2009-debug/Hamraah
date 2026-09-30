@@ -100,6 +100,30 @@ async function createServer() {
     }
   });
 
+  app.post('/api/ai/faq', async (req, res) => {
+    try {
+      const { question } = req.body;
+      if (!question) {
+        return res.status(400).json({ error: 'Question is required' });
+      }
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: `You are the AI Assistant for "Hamraah", a community-driven service marketplace in Chitral, Pakistan. 
+        Provide a helpful, concise answer to the following question about services in Chitral.
+        Mention that Hamraah connects service takers with providers like drivers, painters, and electricians.
+        If relevant, mention that providers are community-verified.
+        
+        Question: ${question}`,
+      });
+
+      res.json({ answer: response.text });
+    } catch (error: any) {
+      console.error('AI FAQ Error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Create Vite server in middleware mode
   const vite = await createViteServer({
     server: { middlewareMode: true },

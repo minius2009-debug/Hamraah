@@ -7,17 +7,20 @@ interface NavigationProps {
   setActiveTab: (tab: string) => void;
 }
 
+import { useLanguage } from '../context/LanguageContext';
+
 export const Navigation: React.FC<NavigationProps> = ({ activeTab, setActiveTab }) => {
   const { profile } = useAuth();
+  const { t } = useLanguage();
   
   const isProvider = profile?.role === 'provider';
 
   const tabs = [
-    { id: 'home', label: 'Services', icon: Home, hide: isProvider },
-    { id: 'jobs', label: isProvider ? 'Dashboard' : 'Bookings', icon: isProvider ? LayoutDashboard : ClipboardList },
-    { id: 'updates', label: 'Updates', icon: BellRing },
-    { id: 'emergency', label: 'Emergency', icon: PhoneCall },
-    { id: 'profile', label: 'Profile', icon: User },
+    { id: 'home', label: t('nav_services'), icon: Home, hide: isProvider },
+    { id: 'jobs', label: isProvider ? t('nav_dashboard') : t('nav_bookings'), icon: isProvider ? LayoutDashboard : ClipboardList },
+    { id: 'updates', label: t('nav_updates'), icon: BellRing },
+    { id: 'emergency', label: t('nav_emergency'), icon: PhoneCall },
+    { id: 'profile', label: t('nav_profile'), icon: User },
   ].filter(t => !t.hide);
 
   return (

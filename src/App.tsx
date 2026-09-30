@@ -98,13 +98,17 @@ const Sidebar: React.FC<{ activeTab: string; setActiveTab: (tab: string) => void
   );
 };
 
+import { LanguageProvider } from './context/LanguageContext';
+
 export default function App() {
   return (
-    <AuthProvider>
-      <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}>
-        <AppContent />
-      </APIProvider>
-    </AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}>
+          <AppContent />
+        </APIProvider>
+      </AuthProvider>
+    </LanguageProvider>
   );
 }
 

@@ -18,6 +18,8 @@ interface UserProfile {
   vehicle?: string;
   photoURL?: string;
   portfolio?: string[];
+  referralCode?: string;
+  communityPoints?: number;
   savedPlaces?: {
     home?: string;
     work?: string;
@@ -30,9 +32,11 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   isLoggingIn: boolean;
+  authError: string | null;
   login: () => Promise<void>;
   logout: () => Promise<void>;
   updateRole: (role: 'customer' | 'provider') => Promise<void>;
+  deleteAccount: () => Promise<void>;
   resetAccount: () => Promise<void>;
 }
 
@@ -43,6 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     let unsubscribeProfile = () => {};
@@ -50,27 +55,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       setUser(user);
       if (user) {
-        // Initial fetch and setup listener
         const docRef = doc(db, 'users', user.uid);
         
         unsubscribeProfile = onSnapshot(docRef, async (snapshot) => {
-          if (snapshot.exists()) {
-            setProfile(snapshot.data() as UserProfile);
-          } else {
-            // New user or deleted doc, wait for onboarding
-            const newProfileData = {
-              id: user.uid,
-              name: user.displayName || 'Anonymous User',
-              email: user.email || '',
-              role: null, // Force selection
-              rating: 5,
-              completedJobs: 0,
-              isVerified: false,
-              createdAt: serverTimestamp()
-            };
-            await setDoc(docRef, newProfileData);
-            // setProfile is handled by onSnapshot trigger
+          try {
+            if (snapshot.exists()) {
+              setProfile(snapshot.data() as UserProfile);
+              setLoading(false);
+            } else {
+              const referralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+              const newProfileData = {
+                id: user.uid,
+                name: user.displayName || 'Anonymous User',
+                email: user.email || '',
+                role: null,
+                rating: 5,
+                completedJobs: 0,
+                isVerified: false,
+                communityPoints: 10,
+                referralCode,
+                createdAt: serverTimestamp()
+              };
+              await setDoc(docRef, newProfileData);
+              // snapshot listener will fire again after setDoc
+            }
+          } catch (err) {
+            console.error("Profile error:", err);
+            setLoading(false);
           }
+        }, (err) => {
+          console.error("Snapshot error:", err);
           setLoading(false);
         });
       } else {
@@ -88,25 +102,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateRole = async (role: 'customer' | 'provider') => {
     if (!user) return;
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
+      await setDoc(doc(db, 'users', user.uid), {
         role,
         updatedAt: serverTimestamp()
-      });
+      }, { merge: true });
       setProfile(prev => prev ? { ...prev, role } : null);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
     }
   };
 
-  const resetAccount = async () => {
+  const deleteAccount = async () => {
     if (!user) return;
-    if (!confirm("Are you sure? This will delete your current profile and roles. You will need to choose your role again.")) return;
+    if (!confirm("Are you sure? THIS IS PERMANENT. Your profile, bookings, and points will be deleted forever.")) return;
     
     try {
       await deleteDoc(doc(db, 'users', user.uid));
-      // onSnapshot will handle the reset
+      await signOut(auth);
+      window.location.reload();
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}`);
+    }
+  };
+
+  const resetAccount = async () => {
+    if (!user) return;
+    if (!confirm("Reset your role? Your profile data will be cleared, but your account remains.")) return;
+    
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        role: null,
+        bio: '',
+        experience: '',
+        vehicle: '',
+        skills: [],
+        portfolio: []
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
     }
   };
 
@@ -114,6 +147,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isLoggingIn) return;
     
     setIsLoggingIn(true);
+    setAuthError(null);
     const provider = new GoogleAuthProvider();
     // Hint: For the best experience in AI Studio preview, ensure popups and 3rd party cookies are allowed.
     try {
@@ -121,7 +155,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error: any) {
       console.error("Detailed login error:", error);
       
-      let message = "Login failed. Please try again.";
+      let message = `Login failed (${error.code}). Please try again.`;
       
       if (error.code === 'auth/cancelled-popup-request') {
         message = "A login request is already in progress. Please check your open windows.";
@@ -133,9 +167,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         message = "Network connection issue. Please check your internet and try again.";
       } else if (error.code === 'auth/internal-error' || error.message?.includes('3rd party cookies')) {
         message = "Authentication error. This usually happens if 3rd-party cookies are blocked in your browser settings.\n\nPlease enable 'Allow all cookies' or 'Allow cross-site tracking' for this preview to work correctly.";
+      } else if (error.code === 'auth/unauthorized-domain') {
+        message = `This domain is not authorized for authentication. Please add it to your Firebase console's Authorized Domains list.`;
+      } else if (error.code === 'auth/operation-not-allowed') {
+        message = "Google Sign-In is not enabled in your Firebase project. Please enable it in the Firebase Console under Authentication > Sign-in method.";
       }
       
-      alert(message);
+      setAuthError(message);
     } finally {
       setIsLoggingIn(false);
     }
@@ -150,7 +188,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isLoggingIn, login, logout, updateRole, resetAccount }}>
+    <AuthContext.Provider value={{ user, profile, loading, isLoggingIn, authError, login, logout, updateRole, deleteAccount, resetAccount }}>
       {children}
     </AuthContext.Provider>
   );

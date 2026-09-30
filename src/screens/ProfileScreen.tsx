@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Shield, Globe, LogOut, RefreshCcw, X, Sparkles, Loader2, Trash2, AlertTriangle } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
+import { Shield, Globe, LogOut, RefreshCcw, X, Sparkles, Loader2, Trash2, AlertTriangle, Gift, Copy } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 
 export const ProfileScreen: React.FC = () => {
-  const { profile, user, logout, login, isLoggingIn, resetAccount } = useAuth();
+  const { profile, user, logout, login, isLoggingIn, resetAccount, deleteAccount } = useAuth();
+  const { language, setLanguage, t } = useLanguage();
 
   const [newSkill, setNewSkill] = useState('');
   const [isEditingSkills, setIsEditingSkills] = useState(false);
+  const [isChangingLanguage, setIsChangingLanguage] = useState(false);
   
   const [bio, setBio] = useState(profile?.bio || '');
   const [experience, setExperience] = useState(profile?.experience || '');
@@ -16,6 +19,13 @@ export const ProfileScreen: React.FC = () => {
   const [portfolioItem, setPortfolioItem] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
+
+  const copyReferralCode = () => {
+    if (profile?.referralCode) {
+      navigator.clipboard.writeText(profile.referralCode);
+      alert("Referral code copied!");
+    }
+  };
 
   const optimizeWithAI = async () => {
     if (!profile) return;
@@ -30,7 +40,6 @@ export const ProfileScreen: React.FC = () => {
       if (data.optimizedBio) {
         setBio(data.optimizedBio);
         if (data.recommendedSkills && data.recommendedSkills.length > 0) {
-           // We'll show an alert or just suggest them
            alert(`AI Suggestion:\n\nBio updated!\nRecommended skills: ${data.recommendedSkills.join(', ')}`);
         }
       }
@@ -148,15 +157,21 @@ export const ProfileScreen: React.FC = () => {
         </div>
       )}
 
-      {user && profile?.role === 'provider' && (
+      {user && (
         <div className="grid grid-cols-2 gap-4 mb-8">
            <div className="bg-emerald-50 p-6 rounded-[32px] border border-emerald-100 shadow-sm">
-              <span className="block text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-1">Total Trips</span>
-              <span className="text-xl font-black text-teal">{(profile.reviewsCount || 0) + 12}</span>
+              <span className="block text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-1">{t('referral_points')}</span>
+              <span className="text-xl font-black text-teal">{profile?.communityPoints || 0}</span>
            </div>
-           <div className="bg-blue-50 p-6 rounded-[32px] border border-blue-100 shadow-sm">
-              <span className="block text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-1">Rating</span>
-              <span className="text-xl font-black text-teal">{profile.rating || '4.9'}</span>
+           <div className="bg-blue-50 p-6 rounded-[32px] border border-blue-100 shadow-sm relative group" onClick={copyReferralCode}>
+              <span className="block text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-1">{t('referral_code')}</span>
+              <span className="text-lg font-black text-teal flex items-center gap-2">
+                {profile?.referralCode || '------'}
+                <Copy size={14} className="opacity-40 group-hover:opacity-100" />
+              </span>
+              <div className="absolute top-2 right-2 text-blue-400">
+                <Gift size={16} />
+              </div>
            </div>
         </div>
       )}
@@ -282,18 +297,33 @@ export const ProfileScreen: React.FC = () => {
       )}
 
       <div className="space-y-3">
-        <button className="w-full bg-white p-4 rounded-2xl flex items-center justify-between border border-slate-100 shadow-sm active:bg-slate-50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gold/10 rounded-xl flex items-center justify-center text-gold">
-              <Globe size={20} />
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <button 
+            onClick={() => setIsChangingLanguage(!isChangingLanguage)}
+            className="w-full p-4 flex items-center justify-between active:bg-slate-50 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gold/10 rounded-xl flex items-center justify-center text-gold">
+                <Globe size={20} />
+              </div>
+              <div className="text-left">
+                <span className="block font-bold text-teal">{t('language')}</span>
+                <span className="text-[10px] text-slate-500 font-medium capitalize">
+                  {language === 'en' ? 'English' : language === 'khw' ? 'Khowar' : 'Urdu'}
+                </span>
+              </div>
             </div>
-            <div className="text-left">
-              <span className="block font-bold text-teal">Language</span>
-              <span className="text-[10px] text-slate-500 font-medium">Urdu / English</span>
+            <span className="text-teal font-bold text-xs bg-gold/20 px-2 py-1 rounded-lg">Change</span>
+          </button>
+          
+          {isChangingLanguage && (
+            <div className="px-4 pb-4 flex gap-2">
+              <button onClick={() => { setLanguage('en'); setIsChangingLanguage(false); }} className={`flex-1 py-2 rounded-xl text-[10px] font-bold border transition-all ${language === 'en' ? 'bg-teal text-white border-teal' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>English</button>
+              <button onClick={() => { setLanguage('khw'); setIsChangingLanguage(false); }} className={`flex-1 py-2 rounded-xl text-[10px] font-bold border transition-all ${language === 'khw' ? 'bg-teal text-white border-teal' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>Khowar</button>
+              <button onClick={() => { setLanguage('ur'); setIsChangingLanguage(false); }} className={`flex-1 py-2 rounded-xl text-[10px] font-bold border transition-all ${language === 'ur' ? 'bg-teal text-white border-teal' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>Urdu</button>
             </div>
-          </div>
-          <span className="text-teal font-bold text-xs bg-gold/20 px-2 py-1 rounded-lg">Change</span>
-        </button>
+          )}
+        </div>
 
         <button className="w-full bg-white p-4 rounded-2xl flex items-center justify-between border border-slate-100 shadow-sm active:bg-slate-50">
           <div className="flex items-center gap-3">
@@ -338,18 +368,27 @@ export const ProfileScreen: React.FC = () => {
           <div className="bg-red-50 rounded-[32px] p-8 border border-red-100">
             <div className="flex items-center gap-3 mb-4 text-red-600">
               <AlertTriangle size={20} />
-              <h4 className="font-black uppercase tracking-tight text-sm">Danger Zone</h4>
+              <h4 className="font-black uppercase tracking-tight text-sm">{t('danger_zone')}</h4>
             </div>
             <p className="text-xs text-red-600/70 mb-6 leading-relaxed font-medium">
-              Deleting your account will permanently remove your profile, ratings, and role. You can create a new account afterwards if you wish to change your role.
+              {t('delete_warning')}
             </p>
-            <button 
-              onClick={resetAccount}
-              className="w-full bg-red-600 text-white py-4 rounded-2xl flex items-center justify-center gap-3 font-black text-xs shadow-lg shadow-red-600/20 active:scale-[0.98] transition-transform"
-            >
-              <Trash2 size={16} />
-              DELETE & RESET PROFILE
-            </button>
+            <div className="space-y-3">
+              <button 
+                onClick={resetAccount}
+                className="w-full bg-red-100 text-red-600 py-4 rounded-2xl flex items-center justify-center gap-3 font-black text-xs active:scale-[0.98] transition-transform"
+              >
+                <RefreshCcw size={16} />
+                RESET ROLE & PROFILE
+              </button>
+              <button 
+                onClick={deleteAccount}
+                className="w-full bg-red-600 text-white py-4 rounded-2xl flex items-center justify-center gap-3 font-black text-xs shadow-lg shadow-red-600/20 active:scale-[0.98] transition-transform"
+              >
+                <Trash2 size={16} />
+                {t('delete_account')}
+              </button>
+            </div>
           </div>
         </div>
       </div>
