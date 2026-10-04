@@ -25,3 +25,19 @@
     @apply bg-crimson text-white font-bold py-3 px-6 rounded-xl active:scale-[0.98] transition-transform flex items-center justify-center gap-2;
   }
 }
+
+@utility custom-scrollbar {
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 10px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: #cbd5e1;
+  }
+}

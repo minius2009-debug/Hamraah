@@ -2,159 +2,78 @@
   "entities": {
     "User": {
       "title": "User",
-      "description": "App user profile (customer or driver)",
+      "description": "User profile information",
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Firebase Auth UID" },
-        "name": { "type": "string", "minLength": 2, "maxLength": 50 },
+        "name": { "type": "string", "maxLength": 100 },
         "email": { "type": "string", "format": "email" },
-        "role": { "type": "string", "enum": ["customer", "driver", "admin"] },
-        "photoURL": { "type": "string" },
-        "vehicle": { "type": "string", "maxLength": 100, "description": "Only for drivers" },
-        "experience": { "type": "string", "maxLength": 100, "description": "Only for drivers" },
-        "rating": { "type": "number", "description": "Average star rating" },
-        "reviewsCount": { "type": "number" },
+        "role": { "type": "string", "enum": ["customer", "provider", "admin"] },
+        "rating": { "type": "number" },
+        "completedJobs": { "type": "number" },
         "isVerified": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "savedPlaces": {
+          "type": "object",
+          "properties": {
+            "home": { "type": "string" },
+            "work": { "type": "string" }
+          }
+        }
       },
-      "required": ["id", "name", "email", "role", "createdAt"]
-    },
-    "Chat": {
-      "title": "Chat",
-      "description": "A chat session between a customer and a driver",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "customerId": { "type": "string" },
-        "driverId": { "type": "string" },
-        "lastMessage": { "type": "string" },
-        "updatedAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["id", "customerId", "driverId", "updatedAt"]
-    },
-    "ChatMessage": {
-      "title": "ChatMessage",
-      "description": "A single message in a chat",
-      "type": "object",
-      "properties": {
-        "senderId": { "type": "string" },
-        "text": { "type": "string", "maxLength": 1000 },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["senderId", "text", "createdAt"]
+      "required": ["id", "name", "email", "role"]
     },
     "ServiceRequest": {
       "title": "Service Request",
-      "description": "A hiring request from a customer",
+      "description": "A request for a service (hiring or transport)",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "customerId": { "type": "string" },
         "category": { "type": "string" },
-        "location": { "type": "string", "maxLength": 200 },
-        "destination": { "type": "string", "maxLength": 200, "description": "Only for transport" },
-        "description": { "type": "string", "maxLength": 1000 },
-        "voiceNoteUrl": { "type": "string" },
+        "location": { "type": "string" },
+        "destination": { "type": "string" },
+        "description": { "type": "string", "maxLength": 2000 },
         "initialOfferPKR": { "type": "number" },
-        "status": { "type": "string", "enum": ["pending", "negotiating", "in_progress", "completed", "cancelled"] },
         "assignedDriverId": { "type": "string" },
-        "finalPricePKR": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "negotiating", "in_progress", "completed", "cancelled"] },
+        "preferences": { "type": "array" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "customerId", "category", "location", "initialOfferPKR", "status", "createdAt"]
-    },
-    "Negotiation": {
-      "title": "Negotiation",
-      "description": "An offer or counter-offer between provider and customer",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "requestId": { "type": "string" },
-        "providerId": { "type": "string" },
-        "offerPKR": { "type": "number" },
-        "message": { "type": "string", "maxLength": 200 },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["id", "requestId", "providerId", "offerPKR", "createdAt"]
+      "required": ["id", "customerId", "category", "location", "initialOfferPKR", "status"]
     },
     "CivicIssue": {
       "title": "Civic Issue",
-      "description": "A community grievance report",
+      "description": "A community reported problem",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "creatorId": { "type": "string" },
-        "title": { "type": "string", "minLength": 5, "maxLength": 100 },
-        "description": { "type": "string", "minLength": 20, "maxLength": 2000 },
-        "category": { "type": "string", "enum": ["Roads", "Water", "Electricity", "Waste", "Other"] },
-        "photoUrl": { "type": "string" },
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "category": { "type": "string" },
         "upvotesCount": { "type": "number" },
         "status": { "type": "string", "enum": ["posted", "escalated", "resolved"] },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["id", "creatorId", "title", "description", "category", "upvotesCount", "status", "createdAt"]
-    },
-    "Upvote": {
-      "title": "Upvote",
-      "description": "An upvote on a civic issue",
-      "type": "object",
-      "properties": {
-        "userId": { "type": "string" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["userId", "createdAt"]
-    },
-    "Notification": {
-      "title": "Notification",
-      "description": "User notifications for job updates and civic escalations",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "userId": { "type": "string" },
-        "title": { "type": "string", "maxLength": 100 },
-        "message": { "type": "string", "maxLength": 500 },
-        "type": { "type": "string", "enum": ["job_status", "civic_escalation"] },
-        "referenceId": { "type": "string", "description": "ID of the related ServiceRequest or CivicIssue" },
-        "read": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["id", "userId", "title", "message", "type", "referenceId", "read", "createdAt"]
+      "required": ["id", "creatorId", "title", "description", "category", "status"]
     }
   },
   "firestore": {
-    "/users/{userId}": {
+    "users/{userId}": {
       "schema": "User",
-      "description": "User profiles"
+      "description": "Public user profiles"
     },
-    "/users/{userId}/notifications/{notificationId}": {
-      "schema": "Notification",
-      "description": "User notifications"
-    },
-    "/service_requests/{requestId}": {
+    "service_requests/{requestId}": {
       "schema": "ServiceRequest",
-      "description": "Hiring requests"
+      "description": "Broadcasting service requests"
     },
-    "/service_requests/{requestId}/negotiations/{negotiationId}": {
-      "schema": "Negotiation",
-      "description": "Offers for a request"
-    },
-    "/civic_issues/{issueId}": {
+    "civic_issues/{issueId}": {
       "schema": "CivicIssue",
-      "description": "Community grievances"
-    },
-    "/civic_issues/{issueId}/upvotes/{userId}": {
-      "schema": "Upvote",
-      "description": "Upvotes for issues"
-    },
-    "/chats/{chatId}": {
-      "schema": "Chat",
-      "description": "Direct chats between users"
-    },
-    "/chats/{chatId}/messages/{messageId}": {
-      "schema": "ChatMessage",
-      "description": "Messages in a chat"
+      "description": "Community advocacy issues"
     }
   }
 }

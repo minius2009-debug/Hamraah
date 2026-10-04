@@ -16,6 +16,8 @@ export const translations: Translations = {
   nav_updates: { en: 'Updates', khw: 'اپڈیٹس', ur: 'تازہ ترین' },
   nav_emergency: { en: 'Emergency', khw: 'ہنگامی', ur: 'ہنگامی' },
   nav_profile: { en: 'Profile', khw: 'پروفائل', ur: 'پروفائل' },
+  nav_support: { en: 'Support', khw: 'سپورٹ', ur: 'سپورٹ' },
+  nav_admin: { en: 'Admin', khw: 'ایڈمن', ur: 'ایڈمن' },
   
   // Home Screen
   welcome_msg: { en: 'Assalam-o-Alaikum,', khw: 'اسلام علیکم،', ur: 'اسلام علیکم،' },

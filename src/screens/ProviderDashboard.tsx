@@ -30,10 +30,8 @@ import {
   Loader2,
   Wallet,
   LayoutDashboard,
-  Star,
-  User as UserIcon
+  Star
 } from 'lucide-react';
-import { ChatModal } from '../components/ChatModal';
 
 interface ServiceRequest {
   id: string;
@@ -60,9 +58,6 @@ export const ProviderDashboard: React.FC = () => {
   const [weeklyData, setWeeklyData] = useState<any[]>([]);
   const [activeChart, setActiveChart] = useState<'daily' | 'weekly'>('daily');
 
-  // Chat integration
-  const [activeChat, setActiveChat] = useState<{ id: string; name: string } | null>(null);
-
   useEffect(() => {
     if (!user) return;
 
@@ -77,7 +72,7 @@ export const ProviderDashboard: React.FC = () => {
         .map(doc => ({ id: doc.id, ...doc.data() } as ServiceRequest))
         .filter(job => job.customerId !== user.uid)
       );
-    });
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'service_requests'));
 
     // 2. Active Jobs (assigned to me and in progress)
     const activeQ = query(
@@ -88,7 +83,7 @@ export const ProviderDashboard: React.FC = () => {
     );
     const unsubscribeActive = onSnapshot(activeQ, (snapshot) => {
       setActiveJobs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceRequest)));
-    });
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'service_requests'));
 
     // 3. Completed Jobs (for earnings)
     const completedQ = query(
@@ -141,7 +136,7 @@ export const ProviderDashboard: React.FC = () => {
       })));
 
       setLoading(false);
-    });
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'service_requests'));
 
     return () => {
       unsubscribeAvail();
@@ -149,27 +144,6 @@ export const ProviderDashboard: React.FC = () => {
       unsubscribeCompleted();
     };
   }, [user]);
-
-  useEffect(() => {
-    if (!user || activeJobs.length === 0) return;
-
-    const hasInProgressJob = activeJobs.some(job => job.status === 'in_progress');
-    if (!hasInProgressJob) return;
-
-    const watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        updateDoc(doc(db, 'users', user.uid), {
-          lastLocation: { lat: latitude, lng: longitude },
-          lastLocationUpdate: serverTimestamp()
-        }).catch(err => console.error("Location update error:", err));
-      },
-      (error) => console.warn("Location watch error:", error),
-      { enableHighAccuracy: true }
-    );
-
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [user, activeJobs]);
 
   const handleAcceptJob = async (job: ServiceRequest) => {
     try {
@@ -478,21 +452,9 @@ export const ProviderDashboard: React.FC = () => {
                      <div key={i} className="w-6 h-6 rounded-full border-2 border-white bg-slate-200" />
                    ))}
                 </div>
-                <div className="flex items-center gap-3">
-                  <button 
-                    onClick={() => {
-                      const chatId = user!.uid < job.customerId ? `${user!.uid}_${job.customerId}` : `${job.customerId}_${user!.uid}`;
-                      setActiveChat({ id: chatId, name: 'Service Taker' });
-                    }}
-                    className="flex items-center gap-1 text-[10px] font-black text-gold uppercase tracking-widest hover:underline"
-                  >
-                    <MessageSquare size={12} />
-                    Chat
-                  </button>
-                  <button className="flex items-center gap-1 text-[10px] font-black text-teal uppercase tracking-widest hover:underline">
-                    Open Control Center <ArrowUpRight size={12} />
-                  </button>
-                </div>
+                <button className="flex items-center gap-1 text-[10px] font-black text-teal uppercase tracking-widest hover:underline">
+                  Open Control Center <ArrowUpRight size={12} />
+                </button>
               </div>
             </div>
           ))}
@@ -503,13 +465,6 @@ export const ProviderDashboard: React.FC = () => {
           )}
         </div>
       </section>
-
-      <ChatModal 
-        isOpen={!!activeChat}
-        onClose={() => setActiveChat(null)}
-        chatId={activeChat?.id || ''}
-        recipientName={activeChat?.name || ''}
-      />
     </div>
   );
 };

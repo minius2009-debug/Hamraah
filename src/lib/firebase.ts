@@ -1,13 +1,11 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
-import { initializeFirestore, doc, getDocFromServer, enableMultiTabIndexedDbPersistence, enableIndexedDbPersistence } from 'firebase/firestore';
+import { getFirestore, doc, getDocFromServer, enableMultiTabIndexedDbPersistence } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
-}, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth();
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const auth = getAuth(app);
 
 // Set Auth Persistence
 setPersistence(auth, browserLocalPersistence).catch(console.error);
@@ -16,13 +14,9 @@ setPersistence(auth, browserLocalPersistence).catch(console.error);
 if (typeof window !== 'undefined') {
   enableMultiTabIndexedDbPersistence(db).catch((err) => {
     if (err.code === 'failed-precondition') {
-      // Multiple tabs open, persistence can only be enabled in one tab at a a time.
       console.warn('Firestore persistence failed-precondition: multiple tabs open');
     } else if (err.code === 'unimplemented') {
-      // The current browser does not support all of the features required to enable persistence
       console.warn('Firestore persistence unimplemented: browser not supported');
-      // Fallback to basic persistence
-      enableIndexedDbPersistence(db).catch(console.error);
     }
   });
 }
@@ -45,7 +39,6 @@ export interface FirestoreErrorInfo {
     email?: string | null;
     emailVerified?: boolean | null;
     isAnonymous?: boolean | null;
-    tenantId?: string | null;
     providerInfo?: {
       providerId?: string | null;
       email?: string | null;
@@ -58,8 +51,6 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   
   if (errorMessage.includes('Could not reach Cloud Firestore backend')) {
     console.warn('Network issue detected: Cloud Firestore backend unreachable. App will continue in offline mode.');
-    // We don't necessarily want to crash the whole app for a transient network issue
-    // if offline persistence is enabled.
     return;
   }
 
@@ -70,7 +61,6 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
       email: auth.currentUser?.email,
       emailVerified: auth.currentUser?.emailVerified,
       isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
       providerInfo: auth.currentUser?.providerData?.map(provider => ({
         providerId: provider.providerId,
         email: provider.email,
@@ -79,7 +69,14 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   }
+  
   console.error('Firestore Error: ', JSON.stringify(errInfo));
+  
+  // For LIST/snapshot operations, don't throw to prevent unhandled promise rejections or snapshot listener crashes
+  if (operationType === OperationType.LIST) {
+    return;
+  }
+  
   throw new Error(JSON.stringify(errInfo));
 }
 
@@ -92,3 +89,4 @@ export async function testConnection() {
     }
   }
 }
+testConnection();

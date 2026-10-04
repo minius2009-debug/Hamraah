@@ -1,26 +1,28 @@
 import React from 'react';
-import { Home, ClipboardList, User, BellRing, PhoneCall, LayoutDashboard } from 'lucide-react';
+import { Home, ClipboardList, User, BellRing, PhoneCall, LayoutDashboard, MessageSquare, Shield } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 
 interface NavigationProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  onSupportClick: () => void;
 }
 
-import { useLanguage } from '../context/LanguageContext';
-
-export const Navigation: React.FC<NavigationProps> = ({ activeTab, setActiveTab }) => {
+export const Navigation: React.FC<NavigationProps> = ({ activeTab, setActiveTab, onSupportClick }) => {
   const { profile } = useAuth();
   const { t } = useLanguage();
   
   const isProvider = profile?.role === 'provider';
+  const isAdmin = profile?.role === 'admin';
 
   const tabs = [
     { id: 'home', label: t('nav_services'), icon: Home, hide: isProvider },
     { id: 'jobs', label: isProvider ? t('nav_dashboard') : t('nav_bookings'), icon: isProvider ? LayoutDashboard : ClipboardList },
     { id: 'updates', label: t('nav_updates'), icon: BellRing },
     { id: 'emergency', label: t('nav_emergency'), icon: PhoneCall },
-    { id: 'profile', label: t('nav_profile'), icon: User },
+    { id: 'admin', label: t('nav_admin'), icon: Shield, hide: !isAdmin },
+    { id: 'support', label: t('nav_support'), icon: MessageSquare, onClick: onSupportClick },
   ].filter(t => !t.hide);
 
   return (
@@ -31,7 +33,13 @@ export const Navigation: React.FC<NavigationProps> = ({ activeTab, setActiveTab 
         return (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => {
+              if ('onClick' in tab && tab.onClick) {
+                tab.onClick();
+              } else {
+                setActiveTab(tab.id);
+              }
+            }}
             className="flex flex-col items-center justify-center h-full transition-all relative"
           >
             <Icon 

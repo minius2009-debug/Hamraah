@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { User, Briefcase, ChevronRight, LogIn, Sparkles, ShieldCheck, Globe, Users } from 'lucide-react';
 
 export const OnboardingScreen: React.FC = () => {
-  const { user, profile, login, isLoggingIn, authError, updateRole } = useAuth();
+  const { user, profile, login, isLoggingIn, updateRole } = useAuth();
   const [loading, setLoading] = useState(false);
 
   const handleRoleSelection = async (role: 'customer' | 'provider') => {
@@ -28,7 +28,7 @@ export const OnboardingScreen: React.FC = () => {
           />
           <h1 className="text-4xl font-black text-teal mb-4 tracking-tight">Hamraah</h1>
           <p className="text-slate-500 mb-12 text-lg leading-relaxed">
-            Chitral's dedicated community service marketplace. Connect, earn, and build a better future together.
+            Chitral's first all-in-one community marketplace. Connect, earn, and build a better future together.
           </p>
 
           <div className="grid grid-cols-2 gap-4 mb-12">
@@ -43,7 +43,7 @@ export const OnboardingScreen: React.FC = () => {
           </div>
 
           <button 
-            onClick={login}
+            onClick={() => login()}
             disabled={isLoggingIn}
             className="w-full bg-teal text-white py-5 rounded-[24px] font-black text-lg shadow-xl shadow-teal/20 flex items-center justify-center gap-3 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
           >
@@ -54,29 +54,6 @@ export const OnboardingScreen: React.FC = () => {
               </>
             )}
           </button>
-
-          <AnimatePresence>
-            {authError && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 10 }}
-                className="mt-6 p-4 bg-crimson/5 border border-crimson/10 rounded-2xl text-left"
-              >
-                <div className="flex gap-3 text-crimson">
-                  <div className="shrink-0 mt-0.5">
-                    <ShieldCheck size={16} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-tight mb-1">Login Blocked</p>
-                    <p className="text-[10px] leading-relaxed font-medium opacity-80 whitespace-pre-line">
-                      {authError}
-                    </p>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
           
           <p className="mt-8 text-[10px] text-slate-400 font-medium px-4">
             By joining, you agree to the community guidelines and terms of service of Chitral's Hamraah platform.
@@ -112,7 +89,7 @@ export const OnboardingScreen: React.FC = () => {
             </div>
             <div className="flex-1">
               <h3 className="text-xl font-black text-teal mb-1">Service Taker</h3>
-              <p className="text-sm text-slate-500 leading-relaxed">I want to book rides, hire professionals, and find local experts.</p>
+              <p className="text-sm text-slate-500 leading-relaxed">I want to book rides, hire professionals, and report community issues.</p>
             </div>
             <ChevronRight className="text-slate-300 group-hover:text-teal transition-colors" />
           </button>

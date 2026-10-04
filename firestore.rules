@@ -1,228 +1,96 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny
+    // Default Deny
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Helper functions
-    function isSignedIn() {
-      return request.auth != null;
-    }
+    // Helper Primitives
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    function isAdmin() {
-      return isSignedIn() && (
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'none') == 'admin') ||
-        request.auth.token.email == 'minius2009@gmail.com'
-      );
-    }
-
-    function isEmailVerified() {
-      return request.auth.token.email_verified == true;
-    }
-
-    // Entity Validations
-    function isValidUser(data, isUpdate) {
-      let requiredKeys = ['id', 'name', 'email', 'role', 'createdAt'];
-      let allowedKeys = ['id', 'name', 'email', 'role', 'photoURL', 'vehicle', 'experience', 'rating', 'reviewsCount', 'completedJobs', 'isVerified', 'savedPlaces', 'createdAt', 'updatedAt'];
-      return data.keys().hasAll(requiredKeys) &&
-             data.keys().hasOnly(allowedKeys) &&
-             data.id == request.auth.uid &&
-             data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
-             data.email is string &&
-             data.role in ['customer', 'driver', 'provider', 'admin', null] &&
-             (isUpdate ? data.createdAt == existing().createdAt : data.createdAt == request.time);
-    }
-
-    function isValidChat(data) {
-      let requiredKeys = ['id', 'customerId', 'driverId', 'updatedAt'];
-      let allowedKeys = ['id', 'customerId', 'driverId', 'lastMessage', 'updatedAt'];
-      return data.keys().hasAll(requiredKeys) &&
-             data.keys().hasOnly(allowedKeys) &&
-             (data.customerId == request.auth.uid || data.driverId == request.auth.uid) &&
-             data.updatedAt == request.time;
-    }
-
-    function isValidChatMessage(data) {
-      let requiredKeys = ['senderId', 'text', 'createdAt'];
-      return data.keys().hasAll(requiredKeys) &&
-             data.keys().hasOnly(requiredKeys) &&
-             data.senderId == request.auth.uid &&
-             data.text is string && data.text.size() <= 1000 &&
-             data.createdAt == request.time;
+    // Validation Helpers
+    function isValidUser(data) {
+      return data.id == request.auth.uid &&
+             data.name is string && data.name.size() <= 100 &&
+             data.email is string && data.email.size() <= 100 &&
+             data.role in ['customer', 'provider', 'admin'] &&
+             data.rating is number &&
+             data.completedJobs is number &&
+             data.isVerified is bool &&
+             data.keys().hasAll(['id', 'name', 'email', 'role', 'rating', 'completedJobs', 'isVerified']);
     }
 
     function isValidServiceRequest(data) {
-      let requiredKeys = ['id', 'customerId', 'category', 'location', 'initialOfferPKR', 'status', 'createdAt', 'updatedAt'];
-      let allowedKeys = ['id', 'customerId', 'category', 'location', 'destination', 'description', 'voiceNoteUrl', 'initialOfferPKR', 'status', 'assignedDriverId', 'finalPricePKR', 'preferences', 'createdAt', 'updatedAt'];
-      return data.keys().hasAll(requiredKeys) &&
-             data.keys().hasOnly(allowedKeys) &&
+      return data.id is string &&
              data.customerId == request.auth.uid &&
-             data.location is string && data.location.size() <= 200 &&
-             (data.get('destination', null) == null || (data.destination is string && data.destination.size() <= 200)) &&
-             (data.get('description', null) == null || (data.description is string && data.description.size() <= 1000)) &&
-             (data.get('assignedDriverId', null) == null || (data.assignedDriverId is string && data.assignedDriverId.size() <= 128)) &&
-             (data.get('preferences', null) == null || data.preferences is list) &&
-             data.initialOfferPKR is number && data.initialOfferPKR > 0 &&
+             data.category is string &&
+             data.location is string &&
+             data.initialOfferPKR is number &&
              data.status in ['pending', 'negotiating', 'in_progress', 'completed', 'cancelled'] &&
-             data.createdAt == request.time &&
-             data.updatedAt == request.time;
-    }
-
-    function isValidNegotiation(data, requestId) {
-      let requiredKeys = ['id', 'requestId', 'providerId', 'offerPKR', 'createdAt'];
-      let allowedKeys = ['id', 'requestId', 'providerId', 'offerPKR', 'message', 'createdAt'];
-      return data.keys().hasAll(requiredKeys) &&
-             data.keys().hasOnly(allowedKeys) &&
-             data.requestId == requestId &&
-             data.providerId == request.auth.uid &&
-             data.offerPKR is number && data.offerPKR > 0 &&
-             (data.message == null || (data.message is string && data.message.size() <= 200)) &&
-             data.createdAt == request.time;
+             data.keys().hasAll(['id', 'customerId', 'category', 'location', 'initialOfferPKR', 'status']);
     }
 
     function isValidCivicIssue(data) {
-      let requiredKeys = ['id', 'creatorId', 'title', 'description', 'category', 'upvotesCount', 'status', 'createdAt', 'updatedAt'];
-      let allowedKeys = ['id', 'creatorId', 'title', 'description', 'category', 'photoUrl', 'upvotesCount', 'status', 'createdAt', 'updatedAt', 'lat', 'lng'];
-      return data.keys().hasAll(requiredKeys) &&
-             data.keys().hasOnly(allowedKeys) &&
+      return data.id is string &&
              data.creatorId == request.auth.uid &&
-             data.title is string && data.title.size() >= 5 && data.title.size() <= 100 &&
-             data.description is string && data.description.size() >= 20 && data.description.size() <= 2000 &&
-             data.category in ['Roads', 'Water', 'Electricity', 'Waste', 'Other'] &&
-             data.upvotesCount == 0 &&
-             data.status == 'posted' &&
-             data.createdAt == request.time &&
-             data.updatedAt == request.time &&
-             (data.get('lat', null) == null || data.lat is number) &&
-             (data.get('lng', null) == null || data.lng is number) &&
-             (data.get('photoUrl', null) == null || (data.photoUrl is string && data.photoUrl.size() <= 500));
+             data.title is string && data.title.size() <= 200 &&
+             data.description is string && data.description.size() <= 2000 &&
+             data.category is string &&
+             data.status in ['posted', 'escalated', 'resolved'] &&
+             data.keys().hasAll(['id', 'creatorId', 'title', 'description', 'category', 'status']);
     }
 
-    function isValidNotification(data) {
-      let requiredKeys = ['id', 'userId', 'title', 'message', 'type', 'referenceId', 'read', 'createdAt'];
-      return data.keys().hasAll(requiredKeys) &&
-             data.keys().hasOnly(requiredKeys) &&
-             data.userId == request.auth.uid &&
-             data.title is string && data.title.size() <= 100 &&
-             data.message is string && data.message.size() <= 500 &&
-             data.type in ['job_status', 'civic_escalation'] &&
-             data.referenceId is string &&
-             data.read is bool &&
-             data.createdAt == request.time;
-    }
-
-    function isValidMessage(data) {
-      let requiredKeys = ['id', 'senderId', 'text', 'createdAt'];
-      return data.keys().hasAll(requiredKeys) &&
-             data.keys().hasOnly(requiredKeys) &&
-             data.senderId == request.auth.uid &&
-             data.text is string && data.text.size() <= 500 &&
-             data.createdAt == request.time;
-    }
-
-    // Match blocks
+    // Collection Matches
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isOwner(userId);
-      allow update: if isSignedIn() && (
-        isOwner(userId) || 
-        (incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'reviewsCount', 'updatedAt']) && existing().role in ['driver', 'provider'])
-      );
-
-      match /notifications/{notificationId} {
-        allow read: if isOwner(userId);
-        allow create: if isSignedIn(); 
-        allow update: if isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
-      }
+      allow read: if true; // Publicly readable for names/ratings
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && 
+                      incoming().diff(existing()).affectedKeys().hasOnly(['role', 'rating', 'completedJobs', 'bio', 'skills', 'savedPlaces', 'updatedAt']);
     }
 
     match /service_requests/{requestId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isValidId(requestId) && isValidServiceRequest(incoming());
       allow update: if isSignedIn() && (
-        // Owner updates
-        (isOwner(existing().customerId) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'assignedDriverId', 'finalPricePKR', 'updatedAt'])) ||
-        // Assigned driver updates
-        (isOwner(existing().assignedDriverId) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
-        // System/Admin
-        isAdmin()
-      ) && incoming().updatedAt == request.time;
-      allow delete: if isAdmin();
-
-      match /messages/{messageId} {
-        allow read: if isSignedIn() && (isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.customerId) || isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.assignedDriverId));
-        allow create: if isSignedIn() && isValidId(messageId) && isValidMessage(incoming()) && 
-                      (isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.customerId) || isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.assignedDriverId));
-      }
-    }
-
-    match /service_requests/{requestId}/negotiations/{negotiationId} {
-      allow read: if isSignedIn() && (isOwner(get(/databases/$(database)/documents/service_requests/$(requestId)).data.customerId) || isOwner(resource.data.providerId));
-      allow create: if isSignedIn() && isValidId(negotiationId) && isValidNegotiation(incoming(), requestId) && 
-                    exists(/databases/$(database)/documents/service_requests/$(requestId));
-    }
-
-    match /civic_issues/{issueId} {
-      allow read: if true; // Publicly readable
-      allow create: if isSignedIn() && isValidId(issueId) && isValidCivicIssue(incoming());
-      allow update: if isSignedIn() && (
-        // Admin can update status
-        (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
-        // Users can upvote
-        (incoming().diff(existing()).affectedKeys().hasOnly(['upvotesCount', 'updatedAt', 'location']))
+        // Customer can update status or cancel
+        (isOwner(existing().customerId) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'assignedDriverId', 'updatedAt'])) ||
+        // Provider can accept/update status if assigned
+        (existing().assignedDriverId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+        // Broadcast accept
+        (existing().status == 'pending' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'assignedDriverId', 'updatedAt']))
       );
     }
 
-    match /civic_issues/{issueId}/upvotes/{userId} {
-      allow read: if true; // Publicly readable
-      allow create: if isSignedIn() && isOwner(userId) && 
-                    exists(/databases/$(database)/documents/civic_issues/$(issueId));
+    match /civic_issues/{issueId} {
+      allow read: if true; // Public awareness
+      allow create: if isSignedIn() && isValidId(issueId) && isValidCivicIssue(incoming());
+      allow update: if isSignedIn() && (
+        // Community upvotes
+        (incoming().diff(existing()).affectedKeys().hasOnly(['upvotesCount', 'updatedAt'])) ||
+        // Creator update
+        (isOwner(existing().creatorId) && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'status', 'updatedAt']))
+      );
     }
 
+    // Subcollections
     match /civic_issues/{issueId}/comments/{commentId} {
       allow read: if true;
-      allow create: if isSignedIn() && isValidId(commentId) && 
-                    request.resource.data.userId == request.auth.uid &&
-                    request.resource.data.text is string &&
-                    request.resource.data.text.size() > 0 &&
-                    request.resource.data.text.size() <= 500 &&
-                    request.resource.data.createdAt == request.time;
+      allow create: if isSignedIn() && isValidId(commentId) && incoming().userId == request.auth.uid;
     }
-
+    
     match /chats/{chatId} {
-      allow read: if isSignedIn() && (request.auth.uid in existing().get('participants', [existing().get('customerId'), existing().get('driverId')]));
-      allow create: if isSignedIn() && isValidId(chatId); // Simplified for new chat creation
-      allow update: if isSignedIn() && (request.auth.uid in existing().get('participants', [existing().get('customerId'), existing().get('driverId')])) && 
-                    incoming().updatedAt == request.time;
-
-      match /messages/{messageId} {
-        allow read: if isSignedIn() && (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.get('participants', [get(/databases/$(database)/documents/chats/$(chatId)).data.get('customerId'), get(/databases/$(database)/documents/chats/$(chatId)).data.get('driverId')]));
-        allow create: if isSignedIn() && isValidId(messageId) && isValidChatMessage(incoming()) && 
-                      (request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.get('participants', [get(/databases/$(database)/documents/chats/$(chatId)).data.get('customerId'), get(/databases/$(database)/documents/chats/$(chatId)).data.get('driverId')]));
-      }
-    }
-
-    match /chitral_updates/{updateId} {
-      allow read: if true;
-      allow create, update, delete: if isAdmin();
+       allow read: if isSignedIn() && (request.auth.uid in chatId.split('_'));
+       allow create: if isSignedIn() && (request.auth.uid in chatId.split('_'));
+       
+       match /messages/{messageId} {
+         allow read: if isSignedIn();
+         allow create: if isSignedIn() && incoming().senderId == request.auth.uid;
+       }
     }
   }
 }

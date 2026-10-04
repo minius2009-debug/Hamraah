@@ -3,7 +3,7 @@ import { collection, query, onSnapshot, orderBy, doc, deleteDoc, serverTimestamp
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
-import { Shield, Trash2, AlertTriangle, Clock, MapPin, Search, Loader2, CheckCircle2, Megaphone } from 'lucide-react';
+import { Shield, Trash2, AlertTriangle, Clock, MapPin, Search, Loader2, CheckCircle2, Megaphone, MessageSquare, LifeBuoy } from 'lucide-react';
 
 interface ServiceRequest {
   id: string;
@@ -15,12 +15,26 @@ interface ServiceRequest {
   createdAt: any;
 }
 
+interface SupportTicket {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  type: 'support' | 'report';
+  subject: string;
+  message: string;
+  status: 'open' | 'closed' | 'in-progress';
+  createdAt: any;
+}
+
 export const AdminDashboard: React.FC = () => {
   const { profile } = useAuth();
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [updates, setUpdates] = useState<any[]>([]);
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'requests' | 'news' | 'support'>('requests');
   
   // News form state
   const [newsTitle, setNewsTitle] = useState('');
@@ -40,14 +54,36 @@ export const AdminDashboard: React.FC = () => {
     const qUpd = query(collection(db, 'chitral_updates'), orderBy('createdAt', 'desc'));
     const unsubUpd = onSnapshot(qUpd, (snapshot) => {
       setUpdates(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    const qTix = query(collection(db, 'support_tickets'), orderBy('createdAt', 'desc'));
+    const unsubTix = onSnapshot(qTix, (snapshot) => {
+      setTickets(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SupportTicket)));
       setLoading(false);
     });
 
     return () => {
       unsubReq();
       unsubUpd();
+      unsubTix();
     };
   }, [profile]);
+
+  const handleUpdateTicketStatus = async (id: string, status: string) => {
+    try {
+      await updateDoc(doc(db, 'support_tickets', id), { 
+        status,
+        updatedAt: serverTimestamp() 
+      });
+    } catch (error) {
+      console.error("Ticket update error:", error);
+    }
+  };
+
+  const handleDeleteTicket = async (id: string) => {
+    if (!confirm("Permanently delete this support ticket?")) return;
+    await deleteDoc(doc(db, 'support_tickets', id));
+  };
 
   const handlePostNews = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,6 +143,19 @@ export const AdminDashboard: React.FC = () => {
     r.category.toLowerCase().includes(search.toLowerCase())
   );
 
+  const filteredUpdates = updates.filter(u => 
+    u.title.toLowerCase().includes(search.toLowerCase()) || 
+    u.content.toLowerCase().includes(search.toLowerCase()) ||
+    u.category.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const filteredTickets = tickets.filter(t => 
+    t.subject.toLowerCase().includes(search.toLowerCase()) || 
+    t.message.toLowerCase().includes(search.toLowerCase()) ||
+    t.userName.toLowerCase().includes(search.toLowerCase()) ||
+    t.userEmail.toLowerCase().includes(search.toLowerCase())
+  );
+
   if (profile?.role !== 'admin') {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
@@ -133,6 +182,36 @@ export const AdminDashboard: React.FC = () => {
         </div>
       </header>
 
+      {/* Admin Tabs */}
+      <div className="flex gap-4 p-1 bg-white border border-slate-100 rounded-3xl shadow-sm">
+        <button
+          onClick={() => setActiveTab('requests')}
+          className={`flex-1 py-4 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 ${activeTab === 'requests' ? 'bg-teal text-white shadow-lg shadow-teal/10' : 'text-slate-400 hover:bg-slate-50'}`}
+        >
+          <Clock size={16} />
+          COMMUNITY POSTS
+        </button>
+        <button
+          onClick={() => setActiveTab('news')}
+          className={`flex-1 py-4 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 ${activeTab === 'news' ? 'bg-teal text-white shadow-lg shadow-teal/10' : 'text-slate-400 hover:bg-slate-50'}`}
+        >
+          <Megaphone size={16} />
+          OFFICIAL NEWS
+        </button>
+        <button
+          onClick={() => setActiveTab('support')}
+          className={`flex-1 py-4 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 ${activeTab === 'support' ? 'bg-teal text-white shadow-lg shadow-teal/10' : 'text-slate-400 hover:bg-slate-50'}`}
+        >
+          <LifeBuoy size={16} />
+          SUPPORT TICKETS
+          {tickets.filter(t => t.status === 'open').length > 0 && (
+            <span className="w-5 h-5 bg-crimson text-white rounded-full flex items-center justify-center text-[10px] animate-pulse">
+              {tickets.filter(t => t.status === 'open').length}
+            </span>
+          )}
+        </button>
+      </div>
+
       <div className="relative">
         <input 
           value={search}
@@ -143,9 +222,10 @@ export const AdminDashboard: React.FC = () => {
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
       </div>
 
-      <div className="grid md:grid-cols-2 gap-8">
-        {/* News Poster */}
-        <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
+      {activeTab === 'news' && (
+        <div className="grid md:grid-cols-2 gap-8">
+          {/* News Poster */}
+          <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-xl font-black text-teal">Post Official News</h3>
             <button 
@@ -215,7 +295,7 @@ export const AdminDashboard: React.FC = () => {
         <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
            <h3 className="text-xl font-black text-teal mb-6">Live News Stream</h3>
            <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 no-scrollbar">
-              {updates.map(upd => (
+               {filteredUpdates.map(upd => (
                 <div key={upd.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between group">
                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -236,9 +316,11 @@ export const AdminDashboard: React.FC = () => {
            </div>
         </div>
       </div>
+      )}
 
-      <div className="space-y-4">
-        <h3 className="text-xl font-black text-teal px-1">Manage Community Posts</h3>
+      {activeTab === 'requests' && (
+        <div className="space-y-4">
+          <h3 className="text-xl font-black text-teal px-1">Manage Community Posts</h3>
         {loading ? (
           <div className="text-center py-12"><Loader2 className="animate-spin mx-auto text-teal" /></div>
         ) : (
@@ -292,6 +374,60 @@ export const AdminDashboard: React.FC = () => {
           </div>
         )}
       </div>
+      )}
+
+      {activeTab === 'support' && (
+        <div className="space-y-6">
+          <h3 className="text-xl font-black text-teal px-1">User Support Tickets</h3>
+          <div className="grid gap-6">
+            {filteredTickets.map(ticket => (
+              <div key={ticket.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
+                <div className="flex flex-col md:flex-row justify-between gap-6 mb-6">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${ticket.type === 'report' ? 'bg-crimson text-white' : 'bg-teal text-white'}`}>
+                        {ticket.type}
+                      </span>
+                      <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${
+                        ticket.status === 'open' ? 'bg-gold/20 text-teal' : 
+                        ticket.status === 'closed' ? 'bg-slate-100 text-slate-400' : 
+                        'bg-blue-50 text-blue-600'
+                      }`}>
+                        {ticket.status}
+                      </span>
+                    </div>
+                    <h4 className="text-lg font-black text-teal mb-1">{ticket.subject}</h4>
+                    <p className="text-[10px] font-bold text-slate-400">From: {ticket.userName} ({ticket.userEmail})</p>
+                  </div>
+                  <div className="flex gap-2 h-fit">
+                    <button 
+                      onClick={() => handleUpdateTicketStatus(ticket.id, 'closed')}
+                      className="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 hover:text-white transition-all"
+                    >
+                      Close Ticket
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteTicket(ticket.id)}
+                      className="bg-red-50 text-red-600 p-2 rounded-xl hover:bg-red-600 hover:text-white transition-all"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+                <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 italic text-slate-600 text-sm leading-relaxed">
+                  "{ticket.message}"
+                </div>
+                <p className="mt-4 text-[10px] font-bold text-slate-400 px-1">Sent on {ticket.createdAt?.toDate().toLocaleString()}</p>
+              </div>
+            ))}
+            {tickets.length === 0 && (
+              <div className="text-center py-24 bg-slate-50 rounded-[40px] border border-dashed border-slate-200">
+                <p className="text-slate-400 font-bold italic">No support tickets found.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

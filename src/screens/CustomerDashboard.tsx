@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -15,11 +15,8 @@ import {
   AlertCircle,
   Package,
   History,
-  Layout,
-  MessageSquare,
-  Trash2
+  Layout
 } from 'lucide-react';
-import { ChatModal } from '../components/ChatModal';
 
 interface ServiceRequest {
   id: string;
@@ -41,9 +38,6 @@ export const CustomerDashboard: React.FC = () => {
   const [pastBookings, setPastBookings] = useState<ServiceRequest[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Chat integration
-  const [activeChat, setActiveChat] = useState<{ id: string; name: string } | null>(null);
-
   useEffect(() => {
     if (!user) return;
 
@@ -57,6 +51,9 @@ export const CustomerDashboard: React.FC = () => {
     const unsubscribeActive = onSnapshot(activeQ, (snapshot) => {
       setActiveBookings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceRequest)));
       setLoading(false);
+    }, (error) => {
+      console.error('Active bookings listener error:', error);
+      setLoading(false);
     });
 
     // 2. Past Bookings (completed, cancelled)
@@ -68,6 +65,8 @@ export const CustomerDashboard: React.FC = () => {
     );
     const unsubscribePast = onSnapshot(pastQ, (snapshot) => {
       setPastBookings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceRequest)));
+    }, (error) => {
+      console.error('Past bookings listener error:', error);
     });
 
     return () => {
@@ -75,19 +74,6 @@ export const CustomerDashboard: React.FC = () => {
       unsubscribePast();
     };
   }, [user]);
-
-  const handleCancelRequest = async (jobId: string) => {
-    if (!confirm("Are you sure you want to cancel this service request?")) return;
-    try {
-      await updateDoc(doc(db, 'service_requests', jobId), {
-        status: 'cancelled',
-        updatedAt: serverTimestamp()
-      });
-      alert("Request cancelled successfully.");
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `service_requests/${jobId}`);
-    }
-  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -188,34 +174,10 @@ export const CustomerDashboard: React.FC = () => {
                     <div className="w-6 h-6 rounded-full bg-slate-200" />
                     <span className="text-[10px] font-bold text-slate-400">Assigned Professional</span>
                   </div>
-                  <div className="flex items-center gap-3">
-                    {job.assignedProviderId && (
-                      <button 
-                        onClick={() => {
-                          const chatId = user!.uid < job.assignedProviderId! ? `${user!.uid}_${job.assignedProviderId}` : `${job.assignedProviderId}_${user!.uid}`;
-                          setActiveChat({ id: chatId, name: 'Service Provider' });
-                        }}
-                        className="flex items-center gap-1 text-[10px] font-black text-gold uppercase tracking-widest hover:underline"
-                      >
-                        <MessageSquare size={14} />
-                        Chat
-                      </button>
-                    )}
-                    <button className="flex items-center gap-1 text-[10px] font-black text-teal uppercase tracking-widest">
-                      Manage Request <ChevronRight size={14} />
-                    </button>
-                  </div>
-                </div>
-
-                {job.status === 'pending' && (
-                  <button 
-                    onClick={() => handleCancelRequest(job.id)}
-                    className="mt-4 w-full py-3 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-red-100 hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Trash2 size={14} />
-                    Cancel This Request
+                  <button className="flex items-center gap-1 text-[10px] font-black text-teal uppercase tracking-widest">
+                    Manage Request <ChevronRight size={14} />
                   </button>
-                )}
+                </div>
               </motion.div>
             ))}
           </AnimatePresence>
@@ -276,13 +238,6 @@ export const CustomerDashboard: React.FC = () => {
           <p className="text-xs text-teal/70 leading-relaxed font-medium">Always check the service provider's ID verification badge and rating before confirming a booking for maximum safety.</p>
         </div>
       </div>
-
-      <ChatModal 
-        isOpen={!!activeChat}
-        onClose={() => setActiveChat(null)}
-        chatId={activeChat?.id || ''}
-        recipientName={activeChat?.name || ''}
-      />
     </div>
   );
 };

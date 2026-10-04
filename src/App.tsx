@@ -3,6 +3,7 @@ import { AuthProvider } from './context/AuthContext';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
 import { HomeScreen } from './screens/HomeScreen';
+import { CivicScreen } from './screens/CivicScreen';
 import { BookingScreen } from './screens/BookingScreen';
 import { NotificationsScreen } from './screens/NotificationsScreen';
 import { JobsScreen } from './screens/JobsScreen';
@@ -13,27 +14,31 @@ import { UpdatesScreen } from './screens/UpdatesScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { ProviderDashboard } from './screens/ProviderDashboard';
 import { CustomerDashboard } from './screens/CustomerDashboard';
-import { AdminDashboard } from './screens/AdminDashboard';
+import { AdminScreen } from './screens/AdminScreen';
 import { NotificationToaster } from './components/NotificationToaster';
 import { ConnectionStatus } from './components/ConnectionStatus';
+import { ChitralWisdom } from './components/ChitralWisdom';
+import { WeatherWidget } from './components/WeatherWidget';
+import { CommunityGoals } from './components/CommunityGoals';
 import { useAuth } from './context/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Home, ClipboardList, Megaphone, User, BellRing, PhoneCall, ChevronLeft, ChevronRight, Loader2, LayoutDashboard, Shield } from 'lucide-react';
-import { APIProvider } from '@vis.gl/react-google-maps';
+import { ArrowLeft, Home, ClipboardList, Megaphone, User, BellRing, PhoneCall, ChevronLeft, ChevronRight, Loader2, Shield } from 'lucide-react';
 
-const Sidebar: React.FC<{ activeTab: string; setActiveTab: (tab: string) => void }> = ({ activeTab, setActiveTab }) => {
+const Sidebar: React.FC<{ activeTab: string; setActiveTab: (tab: string) => void; role?: string | null }> = ({ activeTab, setActiveTab, role }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const { profile } = useAuth();
-  const isProvider = profile?.role === 'provider';
 
   const tabs = [
-    { id: 'home', label: 'Services', icon: Home, hide: isProvider },
-    { id: 'jobs', label: isProvider ? 'Dashboard' : 'Bookings', icon: isProvider ? LayoutDashboard : ClipboardList },
+    { id: 'home', label: 'Services', icon: Home },
+    { id: 'jobs', label: role === 'provider' ? 'My Jobs' : 'Bookings', icon: ClipboardList },
+    { id: 'civic', label: 'Protest', icon: Megaphone },
     { id: 'updates', label: 'Updates', icon: BellRing },
     { id: 'emergency', label: 'Emergency', icon: PhoneCall },
-    { id: 'admin', label: 'Moderation', icon: Shield, hide: profile?.role !== 'admin' },
     { id: 'profile', label: 'Profile', icon: User },
-  ].filter(t => !t.hide);
+  ];
+
+  if (role === 'admin') {
+    tabs.push({ id: 'admin', label: 'Admin', icon: Shield });
+  }
 
   return (
     <aside className={`hidden md:flex flex-col h-screen sticky top-0 bg-white border-r border-slate-200 p-6 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-24' : 'w-64'}`}>
@@ -98,32 +103,21 @@ const Sidebar: React.FC<{ activeTab: string; setActiveTab: (tab: string) => void
   );
 };
 
-import { LanguageProvider } from './context/LanguageContext';
-
 export default function App() {
   return (
-    <LanguageProvider>
-      <AuthProvider>
-        <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}>
-          <AppContent />
-        </APIProvider>
-      </AuthProvider>
-    </LanguageProvider>
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 
 const AppContent: React.FC = () => {
-  const { user, profile, loading } = useAuth();
-  const [activeTab, setActiveTab] = useState(profile?.role === 'provider' ? 'jobs' : 'home');
+  const [activeTab, setActiveTab] = useState('home');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-
-  useEffect(() => {
-    if (profile?.role === 'provider') {
-      setActiveTab('jobs');
-    }
-  }, [profile?.role]);
+  
+  const { user, profile, loading } = useAuth();
 
   if (loading) {
     return (
@@ -152,6 +146,10 @@ const AppContent: React.FC = () => {
           queryText={searchQuery} 
           onSelectCategory={(id) => {
             setSelectedCategory(id);
+            setSearchQuery('');
+          }}
+          onSelectIssue={(id) => {
+            setActiveTab('civic');
             setSearchQuery('');
           }}
         />
@@ -189,16 +187,19 @@ const AppContent: React.FC = () => {
       case 'home': return (
         <HomeScreen 
           onSelectCategory={(id) => setSelectedCategory(id)} 
+          onNavigateToProtest={() => setActiveTab('civic')}
         />
       );
       case 'jobs': return profile?.role === 'provider' ? <ProviderDashboard /> : <CustomerDashboard />;
+      case 'civic': return <CivicScreen />;
       case 'updates': return <UpdatesScreen />;
       case 'emergency': return <EmergencyScreen />;
-      case 'admin': return <AdminDashboard />;
       case 'profile': return <ProfileScreen />;
+      case 'admin': return <AdminScreen />;
       default: return (
         <HomeScreen 
           onSelectCategory={(id) => setSelectedCategory(id)} 
+          onNavigateToProtest={() => setActiveTab('civic')}
         />
       );
     }
@@ -211,10 +212,11 @@ const AppContent: React.FC = () => {
     switch (activeTab) {
       case 'home': return 'Home';
       case 'jobs': return profile?.role === 'provider' ? 'Provider Dashboard' : 'My Bookings';
+      case 'civic': return 'Community Action';
       case 'updates': return 'Chitral Updates';
       case 'emergency': return 'Emergency Hub';
-      case 'admin': return 'Admin Panel';
       case 'profile': return 'My Account';
+      case 'admin': return 'Admin Panel';
       default: return 'Hamraah';
     }
   };
@@ -223,7 +225,7 @@ const AppContent: React.FC = () => {
     <div className="min-h-screen bg-background flex flex-col md:flex-row max-w-[1440px] mx-auto">
       <NotificationToaster />
       <ConnectionStatus />
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} role={profile?.role} />
         
         <div className="flex-1 flex flex-col min-h-screen relative overflow-x-hidden border-x border-slate-100 bg-white">
           {!selectedCategory && !isNotificationsOpen && (
@@ -254,7 +256,7 @@ const AppContent: React.FC = () => {
         </div>
 
         {/* Right Sidebar / Ad Space / Info - Only on Large Screens */}
-        <aside className="hidden lg:block w-80 h-screen sticky top-0 p-6 bg-slate-50 border-l border-slate-200">
+        <aside className="hidden lg:block w-80 h-screen sticky top-0 p-6 bg-slate-50 border-l border-slate-200 overflow-y-auto custom-scrollbar">
            <div className="bg-white p-6 rounded-[32px] shadow-sm border border-slate-100 mb-6 cursor-pointer hover:border-teal/20 transition-all" onClick={() => setActiveTab('updates')}>
              <h3 className="font-bold text-teal mb-4 flex items-center justify-between">
                Chitral Updates
@@ -272,7 +274,7 @@ const AppContent: React.FC = () => {
              </div>
            </div>
 
-           <div className="bg-gold p-6 rounded-[32px] shadow-lg shadow-gold/20 text-teal cursor-pointer" onClick={() => setActiveTab('emergency')}>
+           <div className="bg-gold p-6 rounded-[32px] shadow-lg shadow-gold/20 text-teal cursor-pointer mb-6" onClick={() => setActiveTab('emergency')}>
              <h3 className="font-bold mb-2 flex items-center justify-between">
                Emergency?
                <PhoneCall size={20} />
@@ -280,6 +282,10 @@ const AppContent: React.FC = () => {
              <p className="text-sm font-medium mb-4 opacity-80">Quick access to local emergency services.</p>
              <button className="w-full bg-teal text-white py-3 rounded-xl font-bold text-sm shadow-md">Open Hub</button>
            </div>
+
+           <WeatherWidget />
+           <ChitralWisdom />
+           <CommunityGoals />
         </aside>
       </div>
   );

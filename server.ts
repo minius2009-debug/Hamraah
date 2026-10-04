@@ -20,6 +20,8 @@ async function createServer() {
   });
 
   // API Routes
+  const MODEL_NAME = "gemini-3.8-flash";
+
   app.post('/api/ai/summarize-job', async (req, res) => {
     try {
       const { description, category } = req.body;
@@ -28,7 +30,7 @@ async function createServer() {
       }
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: MODEL_NAME,
         contents: `You are an expert job coordinator in Chitral, Pakistan. 
         Summarize the following service request into a professional, concise "Provider Brief" that helps a professional understand exactly what needs to be done.
         Keep it under 100 words.
@@ -39,8 +41,8 @@ async function createServer() {
 
       res.json({ summary: response.text });
     } catch (error: any) {
-      console.error('AI Error:', error);
-      res.status(500).json({ error: error.message });
+      console.error('AI Error (Summarize):', error.message);
+      res.json({ summary: description }); // Safe fallback
     }
   });
 
@@ -49,21 +51,22 @@ async function createServer() {
       const { title, description, category, upvotesCount } = req.body;
       
       const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: MODEL_NAME,
         contents: `You are a professional legal assistant in Chitral. 
-        Generate a formal "Official Community Notice" or "Letter to the Deputy Commissioner" regarding a civic issue that has received significant community support (${upvotesCount} upvotes).
-        The tone should be respectful but firm and professional.
-        Include sections for: Subject, Context, The Issue, Community Impact, and Proposed Resolution.
+        Generate a formal "Official Community Notice" regarding:
         
         Issue Title: ${title}
         Category: ${category}
-        Community Detail: ${description}`,
+        Community Detail: ${description}
+        Upvotes: ${upvotesCount}
+        
+        The tone should be professional.`,
       });
 
       res.json({ notice: response.text });
     } catch (error: any) {
-      console.error('AI Error:', error);
-      res.status(500).json({ error: error.message });
+      console.error('AI Error (Notice):', error.message);
+      res.json({ notice: `Community Notice: ${title}\n\nThis issue has been raised by the community and is currently under review. Support is growing with ${req.body.upvotesCount} upvotes.` });
     }
   });
 
@@ -72,18 +75,8 @@ async function createServer() {
       const { bio, skills, experience } = req.body;
       
       const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
-        contents: `You are a professional career coach in Chitral, Pakistan. 
-        Analyze the following Service Provider profile and provide a professional, catchy "Optimized Bio" and a list of "Recommended Skill Tags" that would help them get more jobs on the Hamraah app.
-        Keep the bio under 150 words and professional.
-        
-        Current Bio: ${bio || 'Not provided'}
-        Experience: ${experience} years
-        Skills: ${skills?.join(', ') || 'None listed'}
-        
-        Return the response in this exact format:
-        BIO: [Optimized Bio]
-        SKILLS: [Skill1, Skill2, Skill3, etc.]`,
+        model: MODEL_NAME,
+        contents: `Optimize this professional bio for a service provider in Chitral: ${bio}. Return BIO: [text] and SKILLS: [list].`,
       });
 
       const text = response.text || '';
@@ -91,36 +84,84 @@ async function createServer() {
       const skillsMatch = text.match(/SKILLS:\s*([\s\S]*)/i);
 
       res.json({ 
-        optimizedBio: bioMatch ? bioMatch[1].trim() : '', 
+        optimizedBio: bioMatch ? bioMatch[1].trim() : bio, 
         recommendedSkills: skillsMatch ? skillsMatch[1].split(',').map(s => s.trim().replace(/^\[|\]$/g, '')) : [] 
       });
     } catch (error: any) {
-      console.error('AI Error:', error);
-      res.status(500).json({ error: error.message });
+      console.error('AI Error (Optimize):', error.message);
+      res.json({ optimizedBio: req.body.bio, recommendedSkills: [] });
     }
   });
 
-  app.post('/api/ai/faq', async (req, res) => {
+  // Simple in-memory cache for AI responses
+  const aiCache = new Map<string, { data: any; timestamp: number }>();
+  const CACHE_TTL = 1000 * 60 * 60 * 24; // 24 hours (wisdom/goals change slowly)
+
+  app.get('/api/ai/chitral-wisdom', async (req, res) => {
+    const cacheKey = 'wisdom';
+    const cached = aiCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      return res.json(cached.data);
+    }
+
     try {
-      const { question } = req.body;
-      if (!question) {
-        return res.status(400).json({ error: 'Question is required' });
+      const response = await ai.models.generateContent({
+        model: MODEL_NAME,
+        contents: "Provide a single, random, inspiring cultural fact or proverb from Chitral, Pakistan. Format it as JSON: { \"text\": \"...\", \"category\": \"...\" }",
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+      const data = JSON.parse(response.text || '{}');
+      aiCache.set(cacheKey, { data, timestamp: Date.now() });
+      res.json(data);
+    } catch (error: any) {
+      if (error.message?.includes('429')) {
+        console.warn('AI Quota reached (Wisdom). Using static fallback.');
+      } else {
+        console.error('AI Error (Wisdom):', error.message);
+      }
+      
+      if (cached) return res.json(cached.data);
+      res.json({ 
+        text: "Nan-e-Nisik, Dad-e-Hasek (Mother is a spring, Father is a shadow).", 
+        category: "Proverb" 
+      });
+    }
+  });
+
+  app.get('/api/ai/community-goals', async (req, res) => {
+    const cacheKey = 'goals';
+    const cached = aiCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      return res.json(cached.data);
+    }
+
+    try {
+      const response = await ai.models.generateContent({
+        model: MODEL_NAME,
+        contents: "Generate simulated weekly community service goals for Chitral. Return as JSON: { \"total_hours_goal\": number, \"hours_completed\": number, \"volunteers\": number, \"message\": \"string\" }",
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+      const data = JSON.parse(response.text || '{}');
+      aiCache.set(cacheKey, { data, timestamp: Date.now() });
+      res.json(data);
+    } catch (error: any) {
+      if (error.message?.includes('429')) {
+        console.warn('AI Quota reached (Goals). Using static fallback.');
+      } else {
+        console.error('AI Error (Goals):', error.message);
       }
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
-        contents: `You are the AI Assistant for "Hamraah", a community-driven service marketplace in Chitral, Pakistan. 
-        Provide a helpful, concise answer to the following question about services in Chitral.
-        Mention that Hamraah connects service takers with providers like drivers, painters, and electricians.
-        If relevant, mention that providers are community-verified.
-        
-        Question: ${question}`,
+      if (cached) return res.json(cached.data);
+      res.json({
+        total_hours_goal: 500,
+        hours_completed: 342,
+        volunteers: 120,
+        message: "Chitral grows stronger when we work together!"
       });
-
-      res.json({ answer: response.text });
-    } catch (error: any) {
-      console.error('AI FAQ Error:', error);
-      res.status(500).json({ error: error.message });
     }
   });
 

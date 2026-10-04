@@ -4,7 +4,6 @@ import { collection, doc, setDoc, getDoc, query, where, orderBy, onSnapshot, ser
 import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, MapPin, Mic, Send, Banknote, Navigation, Loader2, Radio, Star, ShieldCheck, Car, Clock, MessageSquare, X, Info, CheckCircle2, Home, Briefcase, BookmarkPlus, VolumeX, Wind, Luggage, Sparkles as SparklesIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Map, AdvancedMarker, Pin } from '@vis.gl/react-google-maps';
 
 interface BookingScreenProps {
   categoryId: string;
@@ -64,9 +63,6 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
   const { profile } = useAuth();
   const [showPrefsModal, setShowPrefsModal] = useState(false);
   const [preferences, setPreferences] = useState<string[]>([]);
-  
-  const [driverLocation, setDriverLocation] = useState<{lat: number, lng: number} | null>(null);
-  const [userCoords, setUserCoords] = useState<{lat: number, lng: number} | null>(null);
 
   const PREFERENCE_OPTIONS = [
     { id: 'quiet', label: 'Quiet Ride', icon: VolumeX },
@@ -136,25 +132,6 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
       setEstimatedPrice(null);
     }
   }, [location, destination, activeCategory]);
-
-  // Real-time tracking listener
-  useEffect(() => {
-    if (!selectedDriver) return;
-    const unsub = onSnapshot(doc(db, 'users', selectedDriver.id), (doc) => {
-      const data = doc.data();
-      if (data?.lastLocation) {
-        setDriverLocation(data.lastLocation);
-      }
-    });
-    return () => unsub();
-  }, [selectedDriver]);
-
-  useEffect(() => {
-    if (location.includes('(')) {
-      const match = location.match(/\(([^,]+),\s*([^)]+)\)/);
-      if (match) setUserCoords({ lat: parseFloat(match[1]), lng: parseFloat(match[2]) });
-    }
-  }, [location]);
 
   // Real-time tracking simulator
   useEffect(() => {
@@ -362,6 +339,11 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
 
     if (isTransport && !destination.trim()) {
       alert("Please enter a destination");
+      return;
+    }
+
+    if (!isTransport && !description.trim()) {
+      alert("Please provide some job details");
       return;
     }
 
@@ -596,40 +578,63 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
               </div>
             </div>
 
-            {/* Real-time Google Map Tracking */}
-            <div className="relative h-64 bg-slate-100 rounded-[32px] overflow-hidden border-4 border-white/20 shadow-inner">
-              <Map
-                defaultZoom={15}
-                defaultCenter={userCoords || { lat: 35.8511, lng: 71.7864 }}
-                center={driverLocation || userCoords}
-                mapId="DEMO_MAP_ID"
-                disableDefaultUI={true}
-                internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
-              >
-                {userCoords && (
-                  <AdvancedMarker position={userCoords} title="Your Location">
-                    <Pin background={'#115E59'} borderColor={'#FFFFFF'} glyphColor={'#FFFFFF'} />
-                  </AdvancedMarker>
-                )}
-                
-                {driverLocation && (
-                  <AdvancedMarker position={driverLocation} title={selectedDriver.name}>
-                    <div className="relative">
-                      <div className="w-10 h-10 bg-white rounded-xl shadow-lg flex items-center justify-center p-1 border-2 border-gold">
-                        <Car size={20} className="text-teal" />
-                      </div>
-                      <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white animate-pulse" />
-                    </div>
-                  </AdvancedMarker>
-                )}
-              </Map>
-              
-              <div className="absolute bottom-4 left-4 right-4 flex justify-between items-center bg-white/90 backdrop-blur-md p-3 rounded-2xl shadow-lg border border-white/50">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                  <span className="text-[10px] font-black text-teal uppercase tracking-tight">Live GPS Tracking</span>
+            {/* Tracking Visualization */}
+            <div className="relative h-24 bg-black/10 rounded-[24px] p-4 flex flex-col justify-center">
+              <div className="flex justify-between items-center mb-2 px-2">
+                <div className="flex flex-col items-center gap-1">
+                  <div className="w-2 h-2 bg-white rounded-full shadow-[0_0_8px_white]" />
+                  <span className="text-[8px] font-bold opacity-60 uppercase">Driver</span>
                 </div>
-                <span className="text-[10px] font-bold text-slate-500">Chitral, Pakistan</span>
+                <div className="flex flex-col items-center gap-1">
+                  <div className="w-2 h-2 bg-gold rounded-full shadow-[0_0_8px_#FFD700]" />
+                  <span className="text-[8px] font-bold opacity-60 uppercase">You</span>
+                </div>
+              </div>
+              
+              <div className="relative h-1 bg-white/20 rounded-full mx-2">
+                {/* Route Line */}
+                <div className="absolute inset-0 bg-white/10 rounded-full overflow-hidden">
+                  <div className="h-full w-full bg-[repeating-linear-gradient(90deg,transparent,transparent_8px,rgba(255,255,255,0.2)_8px,rgba(255,255,255,0.2)_16px)]" />
+                </div>
+                
+                {/* Progress Fill */}
+                <motion.div 
+                  className="absolute left-0 top-0 h-full bg-gold rounded-full"
+                  animate={{ width: `${trackingProgress}%` }}
+                  transition={{ type: "spring", stiffness: 50 }}
+                />
+
+                {/* Moving Driver Icon */}
+                <motion.div 
+                  className="absolute top-1/2 -translate-y-1/2 -ml-5"
+                  animate={{ left: `${trackingProgress}%` }}
+                  transition={{ type: "spring", stiffness: 50 }}
+                >
+                  <div className="w-10 h-10 bg-white p-1 rounded-2xl shadow-xl border-2 border-white transform">
+                    <img 
+                      src={
+                        activeCategory === 'cars' ? '/src/assets/images/car_rental_hero_1790495430237.jpg' :
+                        activeCategory === 'bikes' ? '/src/assets/images/bike_rental_hero_1790668396314.jpg' :
+                        activeCategory === 'taxis' ? '/src/assets/images/taxi_booking_hero_1790668419818.jpg' :
+                        '/src/assets/images/rickshaw_service_hero_1790668434852.jpg'
+                      } 
+                      alt="" 
+                      className="w-full h-full object-cover rounded-xl" 
+                    />
+                  </div>
+                  {/* Pulse Effect */}
+                  <div className="absolute inset-0 bg-white rounded-2xl animate-ping opacity-20 pointer-events-none" />
+                </motion.div>
+              </div>
+
+              <div className="mt-4 flex justify-between items-center px-1">
+                <div className="flex items-center gap-2">
+                   <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                   <span className="text-[9px] font-bold tracking-tight italic">Live GPS Signal Active</span>
+                </div>
+                <span className="text-[9px] font-black text-gold uppercase tracking-tighter">
+                  {trackingProgress > 90 ? 'Nearby' : `${Math.round(100 - trackingProgress)}% to Pickup`}
+                </span>
               </div>
             </div>
 
@@ -791,27 +796,29 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
             </motion.div>
           )}
 
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Job Details</label>
-            <div className="relative">
-              <textarea 
-                required
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={4}
-                placeholder="Describe what you need..."
-                className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-teal/50 resize-none"
-              />
-              <button 
-                type="button"
-                onClick={() => setIsRecording(!isRecording)}
-                className={`absolute right-4 bottom-4 p-3 rounded-full transition-all ${isRecording ? 'bg-crimson text-white animate-pulse' : 'bg-gold text-teal shadow-md'}`}
-              >
-                <Mic size={20} />
-              </button>
+          {!isTransport && (
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Job Details</label>
+              <div className="relative">
+                <textarea 
+                  required
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={4}
+                  placeholder="Describe what you need..."
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-teal/50 resize-none"
+                />
+                <button 
+                  type="button"
+                  onClick={() => setIsRecording(!isRecording)}
+                  className={`absolute right-4 bottom-4 p-3 rounded-full transition-all ${isRecording ? 'bg-crimson text-white animate-pulse' : 'bg-gold text-teal shadow-md'}`}
+                >
+                  <Mic size={20} />
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400 px-1">Tip: You can use voice note if you prefer not to type.</p>
             </div>
-            <p className="text-[10px] text-slate-400 px-1">Tip: You can use voice note if you prefer not to type.</p>
-          </div>
+          )}
 
           <div className="space-y-1">
             <div className="flex justify-between items-center px-1">

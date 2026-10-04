@@ -1,6 +1,6 @@
 {
-  "name": "Hamrah",
-  "description": "A community-driven service marketplace for Chitral.",
+  "name": "Hamraah",
+  "description": "Chitral's dedicated community service marketplace. Connect, earn, and build a better future together.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
