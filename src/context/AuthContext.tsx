@@ -102,10 +102,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           id: fbUser.uid,
           name: fbUser.displayName || 'User',
           email: fbUser.email || '',
-          role: null, // Force role selection
+          role: fbUser.email === 'minius2009@gmail.com' ? 'admin' : null, // Set admin for owner
           rating: 5,
           completedJobs: 0,
-          isVerified: false,
+          isVerified: fbUser.email === 'minius2009@gmail.com',
           photoURL: fbUser.photoURL || '',
           createdAt: new Date().toISOString()
         };
@@ -117,8 +117,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         setProfile(profileSnap.data() as UserProfile);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login error:", error);
+      
+      if (error.code === 'auth/unauthorized-domain') {
+        const domain = window.location.hostname;
+        alert(`LOGIN BLOCKED: The domain "${domain}" is not authorized in your Firebase Console.\n\nTo fix this:\n1. Go to Firebase Console > Authentication > Settings\n2. Add "${domain}" to "Authorized Domains"\n\nRedirecting to Guest Mode for now...`);
+        
+        // Fallback to Guest Mode (Anonymous) so the app stays usable
+        try {
+          const { signInAnonymously } = await import('firebase/auth');
+          const guestResult = await signInAnonymously(auth);
+          setUser(guestResult.user);
+        } catch (anonError) {
+          console.error("Guest login failed:", anonError);
+        }
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        // Do nothing, just stop loading
+      } else {
+        alert("Login failed: " + (error.message || "Unknown error"));
+      }
     } finally {
       setIsLoggingIn(false);
     }

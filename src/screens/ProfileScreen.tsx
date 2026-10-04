@@ -1,17 +1,60 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Shield, Globe, LogOut, RefreshCcw, X, Sparkles, Loader2, Trash2, AlertTriangle, LogIn } from 'lucide-react';
+import { Shield, Globe, LogOut, RefreshCcw, X, Sparkles, Loader2, Trash2, AlertTriangle, LogIn, CheckCircle2, Send } from 'lucide-react';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { collection, addDoc, serverTimestamp, query, where, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 
 export const ProfileScreen: React.FC = () => {
   const { profile, user, logout, login, isLoggingIn, resetAccount, updateRole } = useAuth();
 
-  const [newSkill, setNewSkill] = useState('');
-  const [isEditingSkills, setIsEditingSkills] = useState(false);
-  
   const [bio, setBio] = useState(profile?.bio || '');
   const [experience, setExperience] = useState(profile?.experience || '');
   const [isSaving, setIsSaving] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
+  
+  // Verification State
+  const [pendingApp, setPendingApp] = useState<any>(null);
+  const [isApplying, setIsApplying] = useState(false);
+
+  useEffect(() => {
+    if (!user || profile?.role !== 'provider') return;
+
+    const q = query(
+      collection(db, 'verification_applications'),
+      where('userId', '==', user.uid)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        setPendingApp({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
+      } else {
+        setPendingApp(null);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user, profile?.role]);
+
+  const applyForVerification = async () => {
+    if (!user || !profile) return;
+    setIsApplying(true);
+    try {
+      await addDoc(collection(db, 'verification_applications'), {
+        userId: user.uid,
+        userName: profile.name,
+        userEmail: profile.email,
+        status: 'pending',
+        bio: bio || '',
+        skills: profile.skills || [],
+        createdAt: serverTimestamp()
+      });
+      alert("Application submitted! Our team will review your profile shortly.");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, 'verification_applications');
+    } finally {
+      setIsApplying(false);
+    }
+  };
 
   const optimizeWithAI = async () => {
     if (!profile) return;
@@ -39,11 +82,18 @@ export const ProfileScreen: React.FC = () => {
   const saveProfessionalInfo = async () => {
     if (!user) return;
     setIsSaving(true);
-    // Simulated local save
-    setTimeout(() => {
-      alert("Profile info updated locally!");
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        bio,
+        experience,
+        updatedAt: serverTimestamp()
+      });
+      alert("Professional profile updated successfully!");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+    } finally {
       setIsSaving(false);
-    }, 500);
+    }
   };
 
   return (
@@ -64,12 +114,12 @@ export const ProfileScreen: React.FC = () => {
                {isLoggingIn ? 'Connecting...' : 'Get Started'}
              </button>
              <button 
-               onClick={() => login('admin@hamraah.com', 'System Admin')}
+               onClick={() => login()}
                disabled={isLoggingIn}
                className="w-full bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-lg active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
              >
                <Shield size={18} />
-               Login as Admin
+               Login to Admin
              </button>
            </div>
         </div>
@@ -156,11 +206,58 @@ export const ProfileScreen: React.FC = () => {
               </div>
               <div className="text-left">
                 <span className="block font-bold text-teal">Identity Verification</span>
-                <span className="text-[10px] text-slate-500 font-medium">Verified locally</span>
+                <span className="text-[10px] text-slate-500 font-medium">
+                  {profile?.isVerified ? 'Verified Account' : (pendingApp ? `Status: ${pendingApp.status}` : 'Not Verified')}
+                </span>
               </div>
             </div>
-            <span className="text-emerald-500 font-bold text-[10px] uppercase tracking-wider">Verified</span>
+            {profile?.isVerified ? (
+              <span className="text-emerald-500 font-bold text-[10px] uppercase tracking-wider flex items-center gap-1">
+                <CheckCircle2 size={12} /> Verified
+              </span>
+            ) : pendingApp ? (
+              <span className={`font-bold text-[10px] uppercase tracking-wider ${pendingApp.status === 'rejected' ? 'text-crimson' : 'text-gold'}`}>
+                {pendingApp.status}
+              </span>
+            ) : profile?.role === 'provider' ? (
+              <button 
+                onClick={applyForVerification}
+                disabled={isApplying}
+                className="bg-teal text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1 active:scale-95 transition-transform"
+              >
+                {isApplying ? <Loader2 size={10} className="animate-spin" /> : <Send size={10} />}
+                Apply
+              </button>
+            ) : (
+              <span className="text-slate-300 font-bold text-[10px] uppercase tracking-wider">Unverified</span>
+            )}
           </button>
+
+          <div className="pt-8 border-t border-slate-50">
+            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-1">Switch Mode</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <button 
+                onClick={() => updateRole('customer')}
+                className={`py-4 rounded-2xl text-xs font-black transition-all border-2 ${
+                  profile?.role === 'customer' 
+                    ? 'bg-teal border-teal text-white shadow-lg shadow-teal/20' 
+                    : 'bg-white border-slate-100 text-teal hover:border-teal/20'
+                }`}
+              >
+                Service Taker
+              </button>
+              <button 
+                onClick={() => updateRole('provider')}
+                className={`py-4 rounded-2xl text-xs font-black transition-all border-2 ${
+                  profile?.role === 'provider' 
+                    ? 'bg-teal border-teal text-white shadow-lg shadow-teal/20' 
+                    : 'bg-white border-slate-100 text-teal hover:border-teal/20'
+                }`}
+              >
+                Professional
+              </button>
+            </div>
+          </div>
 
           <button 
             onClick={logout}

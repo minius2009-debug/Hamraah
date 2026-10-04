@@ -48,7 +48,7 @@ interface Message {
 }
 
 export const JobsScreen: React.FC = () => {
-  const { profile, user } = useAuth();
+  const { profile, user, login, isLoggingIn } = useAuth();
   const [myRequests, setMyRequests] = useState<ServiceRequest[]>([]);
   const [availableJobs, setAvailableJobs] = useState<ServiceRequest[]>([]);
   const [selectedJob, setSelectedJob] = useState<ServiceRequest | null>(null);
@@ -98,7 +98,7 @@ export const JobsScreen: React.FC = () => {
     const unsubscribeMy = onSnapshot(myQ, (snapshot) => {
       setMyRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceRequest)));
       setLoading(false);
-    });
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'service_requests'));
 
     let unsubscribeAvail = () => {};
     if (isProvider) {
@@ -112,7 +112,7 @@ export const JobsScreen: React.FC = () => {
           .map(doc => ({ id: doc.id, ...doc.data() } as ServiceRequest))
           .filter(job => job.customerId !== user.uid)
         );
-      });
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'service_requests'));
     }
 
     return () => {
@@ -135,7 +135,7 @@ export const JobsScreen: React.FC = () => {
     );
     const unsubscribeNeg = onSnapshot(negQ, (snapshot) => {
       setNegotiations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Negotiation)));
-    });
+    }, (error) => handleFirestoreError(error, OperationType.LIST, `service_requests/${selectedJob.id}/negotiations`));
 
     // Load messages if in progress or completed
     let unsubscribeMsg = () => {};
@@ -147,7 +147,7 @@ export const JobsScreen: React.FC = () => {
       unsubscribeMsg = onSnapshot(msgQ, (snapshot) => {
         setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Message)));
         setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-      });
+      }, (error) => handleFirestoreError(error, OperationType.LIST, `service_requests/${selectedJob.id}/messages`));
     }
 
     return () => {
@@ -581,6 +581,23 @@ export const JobsScreen: React.FC = () => {
 
   return (
     <div className="pb-24 px-4 pt-4">
+      {!user && (
+        <div className="bg-gold/10 border border-gold/20 rounded-[32px] p-8 text-center mb-8">
+           <div className="w-16 h-16 bg-gold/20 rounded-full flex items-center justify-center mx-auto mb-4 text-teal">
+              <ClipboardList size={32} />
+           </div>
+           <h3 className="text-xl font-bold text-teal mb-2">Track Your Work</h3>
+           <p className="text-slate-500 text-sm mb-6">Login to see your active service requests, negotiate prices, and chat with providers.</p>
+           <button 
+             onClick={login}
+             disabled={isLoggingIn}
+             className="w-full bg-teal text-white py-4 rounded-2xl font-bold shadow-lg shadow-teal/20 disabled:opacity-50"
+           >
+             {isLoggingIn ? 'Connecting...' : 'Login to View Market'}
+           </button>
+        </div>
+      )}
+
       {user && (
         <>
           <div className="bg-teal/5 border border-teal/10 rounded-2xl p-4 mb-6 flex items-center justify-between">

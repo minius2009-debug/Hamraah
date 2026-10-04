@@ -60,6 +60,22 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "creatorId", "title", "description", "category", "status"]
+    },
+    "VerificationApplication": {
+      "title": "Verification Application",
+      "description": "Provider application for platform verification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "skills": { "type": "array" },
+        "bio": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "status"]
     }
   },
   "firestore": {
@@ -74,6 +90,10 @@
     "civic_issues/{issueId}": {
       "schema": "CivicIssue",
       "description": "Community advocacy issues"
+    },
+    "verification_applications/{applicationId}": {
+      "schema": "VerificationApplication",
+      "description": "Pending and past verification applications"
     }
   }
 }

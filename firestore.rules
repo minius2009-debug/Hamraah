@@ -12,6 +12,7 @@ service cloud.firestore {
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
+    function isAdmin() { return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'; }
 
     // Validation Helpers
     function isValidUser(data) {
@@ -51,6 +52,12 @@ service cloud.firestore {
       allow create: if isOwner(userId) && isValidUser(incoming());
       allow update: if isOwner(userId) && 
                       incoming().diff(existing()).affectedKeys().hasOnly(['role', 'rating', 'completedJobs', 'bio', 'skills', 'savedPlaces', 'updatedAt']);
+
+      match /notifications/{notificationId} {
+        allow read: if isOwner(userId);
+        allow create: if isSignedIn();
+        allow update: if isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      }
     }
 
     match /service_requests/{requestId} {
@@ -64,6 +71,16 @@ service cloud.firestore {
         // Broadcast accept
         (existing().status == 'pending' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'assignedDriverId', 'updatedAt']))
       );
+
+      match /negotiations/{negotiationId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && isValidId(negotiationId);
+      }
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && isValidId(messageId);
+      }
     }
 
     match /civic_issues/{issueId} {
@@ -75,8 +92,24 @@ service cloud.firestore {
         // Creator update
         (isOwner(existing().creatorId) && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'status', 'updatedAt']))
       );
+      allow delete: if isAdmin();
+
+      match /upvotes/{userId} {
+        allow read: if true;
+        allow create, delete: if isOwner(userId);
+      }
     }
 
+    match /verification_applications/{applicationId} {
+      allow get: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid && incoming().status == 'pending';
+      allow update: if isAdmin() && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['status'])
+      );
+      allow delete: if isAdmin();
+    }
+    
     // Subcollections
     match /civic_issues/{issueId}/comments/{commentId} {
       allow read: if true;

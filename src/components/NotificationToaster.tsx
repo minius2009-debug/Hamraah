@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { Bell, X, Briefcase, AlertTriangle } from 'lucide-react';
@@ -48,7 +48,7 @@ export const NotificationToaster: React.FC = () => {
           }, 5000);
         }
       }
-    });
+    }, (error) => handleFirestoreError(error, OperationType.LIST, path));
 
     return () => unsubscribe();
   }, [user, lastNotificationId]);

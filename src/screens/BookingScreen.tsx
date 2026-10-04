@@ -163,7 +163,7 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
       setDrivers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Driver)));
       setLoadingDrivers(false);
     }, (error) => {
-      console.error("Error fetching drivers:", error);
+      handleFirestoreError(error, OperationType.LIST, 'users');
       setLoadingDrivers(false);
     });
     return () => unsubscribe();
@@ -178,7 +178,7 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setMessages(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage)));
-    });
+    }, (error) => handleFirestoreError(error, OperationType.LIST, `chats/${activeChatId}/messages`));
     return () => unsubscribe();
   }, [activeChatId]);
 

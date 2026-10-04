@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -52,7 +52,7 @@ export const CustomerDashboard: React.FC = () => {
       setActiveBookings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceRequest)));
       setLoading(false);
     }, (error) => {
-      console.error('Active bookings listener error:', error);
+      handleFirestoreError(error, OperationType.LIST, 'service_requests');
       setLoading(false);
     });
 
@@ -66,7 +66,7 @@ export const CustomerDashboard: React.FC = () => {
     const unsubscribePast = onSnapshot(pastQ, (snapshot) => {
       setPastBookings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ServiceRequest)));
     }, (error) => {
-      console.error('Past bookings listener error:', error);
+      handleFirestoreError(error, OperationType.LIST, 'service_requests');
     });
 
     return () => {
