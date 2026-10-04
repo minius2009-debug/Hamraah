@@ -54,6 +54,8 @@
         "description": { "type": "string", "maxLength": 2000 },
         "category": { "type": "string" },
         "upvotesCount": { "type": "number" },
+        "downvotesCount": { "type": "number" },
+        "commentsCount": { "type": "number" },
         "status": { "type": "string", "enum": ["posted", "escalated", "resolved"] },
         "lat": { "type": "number" },
         "lng": { "type": "number" },

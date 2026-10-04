@@ -177,7 +177,84 @@ export const ProviderDashboard: React.FC = () => {
   }
 
   return (
-    <div className="flex-1 p-6 space-y-8 pb-24">
+    <div className="flex-1 p-6 space-y-10 pb-24">
+      {/* Incoming Requests - Primary Focus */}
+      <section>
+        <div className="flex items-center justify-between mb-6 px-2">
+          <h3 className="text-2xl font-black text-teal flex items-center gap-3">
+            <div className="w-10 h-10 bg-crimson/10 rounded-xl flex items-center justify-center text-crimson">
+               <Sparkles size={20} />
+            </div>
+            Gigs Feed
+            <span className="bg-crimson text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse">LIVE</span>
+          </h3>
+          <button className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-teal transition-colors flex items-center gap-1">
+            Chitral Town <MapPin size={12} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <AnimatePresence mode="popLayout">
+            {availableJobs.map((job) => (
+              <motion.div 
+                key={job.id}
+                layout
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm group hover:border-teal/20 transition-all"
+              >
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <span className="inline-block bg-teal/5 text-teal text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-widest mb-3">
+                      {job.category}
+                    </span>
+                    <h4 className="text-lg font-black text-teal leading-tight mb-1">{job.location}</h4>
+                    <div className="flex items-center gap-3 text-slate-400">
+                       <div className="flex items-center gap-1"><Clock size={12} /><span className="text-[10px] font-bold">{job.createdAt?.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div>
+                       <div className="flex items-center gap-1"><MapPin size={12} /><span className="text-[10px] font-bold">Nearby</span></div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Client Offer</p>
+                    <p className="text-xl font-black text-teal">PKR {job.initialOfferPKR}</p>
+                  </div>
+                </div>
+
+                <p className="text-sm text-slate-500 mb-6 line-clamp-2 leading-relaxed bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                  {job.description}
+                </p>
+
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => handleAcceptJob(job)}
+                    className="flex-1 bg-teal text-white py-4 rounded-2xl font-black text-xs shadow-lg shadow-teal/10 hover:shadow-teal/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle2 size={16} />
+                    ACCEPT JOB
+                  </button>
+                  <button 
+                    onClick={() => handleDeclineJob(job)}
+                    className="w-14 h-14 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-colors"
+                  >
+                    <XCircle size={20} />
+                  </button>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+          {availableJobs.length === 0 && (
+            <div className="text-center py-16 bg-white rounded-[40px] border-2 border-dashed border-slate-100">
+              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
+                <Sparkles size={32} />
+              </div>
+              <p className="text-slate-400 font-bold">Waiting for new requests in Chitral...</p>
+              <p className="text-slate-300 text-xs mt-1">We'll alert you as soon as a client posts a job.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
       {/* Performance Summary Card */}
       <section className="bg-teal text-white rounded-[40px] p-8 shadow-2xl shadow-teal/20 relative overflow-hidden">
         <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-white/5 rounded-full blur-3xl" />
@@ -230,23 +307,14 @@ export const ProviderDashboard: React.FC = () => {
             </div>
           </div>
           
-          <div className="mt-8 pt-8 border-t border-white/10 grid grid-cols-2 gap-4">
-            <div className="flex items-center gap-3 bg-white/5 rounded-2xl p-4">
+          <div className="mt-8 pt-8 border-t border-white/10">
+            <div className="flex items-center gap-3 bg-white/5 rounded-2xl p-4 w-fit">
               <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center text-gold">
                 <LayoutDashboard size={16} />
               </div>
               <div>
                 <p className="text-white/50 text-[10px] font-bold uppercase tracking-widest leading-none mb-1">Active Work</p>
                 <p className="text-sm font-black leading-none">{activeJobs.length} Ongoing</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 bg-white/5 rounded-2xl p-4">
-              <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center text-emerald-400">
-                <Sparkles size={16} />
-              </div>
-              <div>
-                <p className="text-white/50 text-[10px] font-bold uppercase tracking-widest leading-none mb-1">Live Market</p>
-                <p className="text-sm font-black leading-none">{availableJobs.length} New Requests</p>
               </div>
             </div>
           </div>
@@ -344,79 +412,6 @@ export const ProviderDashboard: React.FC = () => {
               </BarChart>
             )}
           </ResponsiveContainer>
-        </div>
-      </section>
-
-      {/* Incoming Requests */}
-      <section>
-        <div className="flex items-center justify-between mb-6 px-2">
-          <h3 className="text-xl font-black text-teal flex items-center gap-2">
-            Incoming Requests
-            <span className="bg-crimson text-white text-[10px] font-black px-2 py-0.5 rounded-full">LIVE</span>
-          </h3>
-          <button className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-teal transition-colors flex items-center gap-1">
-            View All <ChevronRight size={12} />
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          <AnimatePresence mode="popLayout">
-            {availableJobs.map((job) => (
-              <motion.div 
-                key={job.id}
-                layout
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm group hover:border-teal/20 transition-all"
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <span className="inline-block bg-teal/5 text-teal text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-widest mb-3">
-                      {job.category}
-                    </span>
-                    <h4 className="text-lg font-black text-teal leading-tight mb-1">{job.location}</h4>
-                    <div className="flex items-center gap-3 text-slate-400">
-                       <div className="flex items-center gap-1"><Clock size={12} /><span className="text-[10px] font-bold">{job.createdAt?.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div>
-                       <div className="flex items-center gap-1"><MapPin size={12} /><span className="text-[10px] font-bold">Chitral Town</span></div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Client Offer</p>
-                    <p className="text-xl font-black text-teal">PKR {job.initialOfferPKR}</p>
-                  </div>
-                </div>
-
-                <p className="text-sm text-slate-500 mb-6 line-clamp-2 leading-relaxed bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                  {job.description}
-                </p>
-
-                <div className="flex gap-3">
-                  <button 
-                    onClick={() => handleAcceptJob(job)}
-                    className="flex-1 bg-teal text-white py-4 rounded-2xl font-black text-xs shadow-lg shadow-teal/10 hover:shadow-teal/20 active:scale-95 transition-all flex items-center justify-center gap-2"
-                  >
-                    <CheckCircle2 size={16} />
-                    ACCEPT JOB
-                  </button>
-                  <button 
-                    onClick={() => handleDeclineJob(job)}
-                    className="w-14 h-14 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-colors"
-                  >
-                    <XCircle size={20} />
-                  </button>
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-          {availableJobs.length === 0 && (
-            <div className="text-center py-12 bg-white rounded-[32px] border-2 border-dashed border-slate-100">
-              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
-                <Sparkles size={32} />
-              </div>
-              <p className="text-slate-400 font-bold">Waiting for new requests in Chitral...</p>
-            </div>
-          )}
         </div>
       </section>
 

@@ -3,7 +3,7 @@ import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, setDoc,
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
-import { Megaphone, ThumbsUp, MapPin, AlertCircle, Plus, X, FileText, Sparkles, Loader2, MessageSquare, Send, Map as MapIcon, List, Navigation } from 'lucide-react';
+import { Megaphone, ThumbsUp, ThumbsDown, MapPin, AlertCircle, Plus, X, FileText, Sparkles, Loader2, MessageSquare, Send, Map as MapIcon, List, Navigation, Landmark, TrendingUp } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -27,6 +27,8 @@ interface CivicIssue {
   description: string;
   category: string;
   upvotesCount: number;
+  downvotesCount: number;
+  commentsCount: number;
   status: 'posted' | 'escalated' | 'resolved';
   createdAt: any;
   creatorId: string;
@@ -101,6 +103,10 @@ const CommentSection: React.FC<{ issueId: string }> = ({ issueId }) => {
         userId: user.uid,
         text: newComment.trim(),
         createdAt: serverTimestamp(),
+      });
+      await updateDoc(doc(db, 'civic_issues', issueId), {
+        commentsCount: increment(1),
+        updatedAt: serverTimestamp()
       });
       setNewComment('');
     } catch (error) {
@@ -180,6 +186,7 @@ export const CivicScreen: React.FC = () => {
   const { profile, user, login, isLoggingIn } = useAuth();
   const [issues, setIssues] = useState<CivicIssue[]>([]);
   const [userUpvotes, setUserUpvotes] = useState<Set<string>>(new Set());
+  const [userDownvotes, setUserDownvotes] = useState<Set<string>>(new Set());
   const [openComments, setOpenComments] = useState<Set<string>>(new Set());
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -208,19 +215,25 @@ export const CivicScreen: React.FC = () => {
     // For now, we listen to the issues and check the upvotes. 
     // To minimize permission errors, we check if the user is authenticated first.
     const unsubscribe = onSnapshot(collection(db, 'civic_issues'), (snapshot) => {
-      const checkUpvotes = async () => {
+      const checkInteractions = async () => {
         const upvotedIds = new Set<string>();
-        const upvotePromises = snapshot.docs.map(issueDoc => 
-          getDoc(doc(db, 'civic_issues', issueDoc.id, 'upvotes', user.uid))
-            .then(upvoteDoc => {
-              if (upvoteDoc.exists()) upvotedIds.add(issueDoc.id);
-            })
-            .catch(() => {}) // Ignore errors for individual docs
-        );
-        await Promise.all(upvotePromises);
+        const downvotedIds = new Set<string>();
+        
+        const interactionPromises = snapshot.docs.map(async (issueDoc) => {
+          // Check upvote
+          const upvoteDoc = await getDoc(doc(db, 'civic_issues', issueDoc.id, 'upvotes', user.uid));
+          if (upvoteDoc.exists()) upvotedIds.add(issueDoc.id);
+          
+          // Check downvote
+          const downvoteDoc = await getDoc(doc(db, 'civic_issues', issueDoc.id, 'downvotes', user.uid));
+          if (downvoteDoc.exists()) downvotedIds.add(issueDoc.id);
+        });
+        
+        await Promise.all(interactionPromises);
         setUserUpvotes(upvotedIds);
+        setUserDownvotes(downvotedIds);
       };
-      checkUpvotes();
+      checkInteractions();
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'civic_issues');
     });
@@ -240,8 +253,13 @@ export const CivicScreen: React.FC = () => {
       if (data.notice) {
         setActiveNotice({ title: issue.title, content: data.notice });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('AI Notice Error:', error);
+      if (error.message?.includes('quota') || error.message?.includes('429')) {
+        alert("The AI advocacy tool is currently busy (limit reached). Please try again in a few hours.");
+      } else {
+        alert("AI notice generation failed. Please try again later.");
+      }
     } finally {
       setAiLoading(null);
     }
@@ -321,6 +339,8 @@ export const CivicScreen: React.FC = () => {
         description,
         category,
         upvotesCount: 0,
+        downvotesCount: 0,
+        commentsCount: 0,
         status: 'posted',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -359,6 +379,31 @@ export const CivicScreen: React.FC = () => {
     }
   };
 
+  const handleDownvote = async (issueId: string) => {
+    if (!user) return;
+    
+    const downvoteRef = doc(db, 'civic_issues', issueId, 'downvotes', user.uid);
+    const downvoteDoc = await getDoc(downvoteRef);
+    
+    if (downvoteDoc.exists()) return;
+
+    try {
+      // 1. If upvoted, remove upvote first (optional but cleaner)
+      // For simplicity, we just allow switching.
+      
+      await setDoc(downvoteRef, {
+        userId: user.uid,
+        createdAt: serverTimestamp()
+      });
+      await updateDoc(doc(db, 'civic_issues', issueId), {
+        downvotesCount: increment(1),
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error("Downvote failed:", error);
+    }
+  };
+
   const getStatusLabel = (status: string) => {
     switch (status) {
       case 'resolved': return 'Resolved';
@@ -374,6 +419,14 @@ export const CivicScreen: React.FC = () => {
       default: return 'bg-amber-100 text-amber-700 border-amber-200';
     }
   };
+
+  const sortedIssues = [...issues].sort((a, b) => {
+    const scoreA = (a.upvotesCount || 0) + (a.commentsCount || 0) * 2 - (a.downvotesCount || 0);
+    const scoreB = (b.upvotesCount || 0) + (b.commentsCount || 0) * 2 - (b.downvotesCount || 0);
+    return scoreB - scoreA;
+  });
+
+  const topFiveIds = new Set(sortedIssues.slice(0, 5).filter(i => (i.upvotesCount || 0) > 0).map(i => i.id));
 
   return (
     <div className="pb-24 px-4 pt-4">
@@ -454,28 +507,38 @@ export const CivicScreen: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-6">
-          {issues.map((issue) => (
+          {sortedIssues.map((issue) => (
             <motion.div 
               key={issue.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100"
+              className={`bg-white rounded-3xl p-5 shadow-sm border transition-all ${topFiveIds.has(issue.id) ? 'border-crimson/30 shadow-crimson/5 bg-gradient-to-br from-white to-crimson/[0.02]' : 'border-slate-100'}`}
             >
               <div className="flex justify-between items-start mb-3">
-                <span className={`text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider border ${getStatusColor(issue.status)}`}>
-                  {getStatusLabel(issue.status)}
-                </span>
+                <div className="flex gap-2">
+                  <span className={`text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider border ${getStatusColor(issue.status)}`}>
+                    {getStatusLabel(issue.status)}
+                  </span>
+                  {topFiveIds.has(issue.id) && (
+                    <span className="text-[10px] font-black px-3 py-1 bg-crimson text-white rounded-full uppercase tracking-widest flex items-center gap-1 shadow-sm">
+                      <Landmark size={10} /> To Admin Office
+                    </span>
+                  )}
+                </div>
                 <span className="text-[10px] text-slate-400 font-medium">
                   {issue.createdAt?.toDate().toLocaleDateString()}
                 </span>
               </div>
               
-              <h4 className="font-bold text-teal text-lg mb-2">{issue.title}</h4>
+              <h4 className="font-bold text-teal text-lg mb-2 flex items-center gap-2">
+                {issue.title}
+                {topFiveIds.has(issue.id) && <TrendingUp size={16} className="text-crimson" />}
+              </h4>
               <p className="text-sm text-slate-600 line-clamp-3 mb-4 leading-relaxed">
                 {issue.description}
               </p>
 
-              <div className="flex items-center justify-between border-t border-slate-50 pt-4">
+              <div className="flex flex-wrap items-center justify-between border-t border-slate-50 pt-4 gap-4">
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2 text-slate-500">
                     <MapPin size={14} className="text-crimson" />
@@ -498,28 +561,47 @@ export const CivicScreen: React.FC = () => {
                   )}
                 </div>
                 
-                <button 
-                  onClick={() => handleUpvote(issue.id)}
-                  disabled={userUpvotes.has(issue.id)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all group ${
-                    userUpvotes.has(issue.id) 
-                      ? 'bg-crimson/10 text-crimson cursor-default' 
-                      : 'bg-slate-50 hover:bg-crimson/5 text-slate-400'
-                  }`}
-                >
-                  <ThumbsUp size={16} className={userUpvotes.has(issue.id) ? 'fill-crimson text-crimson' : 'group-hover:text-crimson'} />
-                  <span className={`text-sm font-bold ${userUpvotes.has(issue.id) ? 'text-crimson' : 'text-teal'}`}>
-                    {userUpvotes.has(issue.id) ? 'Upvoted' : 'Upvote'} ({issue.upvotesCount})
-                  </span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <div className="flex bg-slate-50 rounded-2xl p-1 border border-slate-100">
+                    <button 
+                      onClick={() => handleUpvote(issue.id)}
+                      disabled={userUpvotes.has(issue.id) || userDownvotes.has(issue.id)}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all group ${
+                        userUpvotes.has(issue.id) 
+                          ? 'bg-white shadow-sm text-crimson' 
+                          : 'text-slate-400 hover:text-teal'
+                      }`}
+                    >
+                      <ThumbsUp size={16} className={userUpvotes.has(issue.id) ? 'fill-crimson text-crimson' : 'group-hover:text-teal'} />
+                      <span className={`text-xs font-bold ${userUpvotes.has(issue.id) ? 'text-crimson' : 'text-teal'}`}>
+                        {issue.upvotesCount || 0}
+                      </span>
+                    </button>
 
-                <button 
-                  onClick={() => toggleComments(issue.id)}
-                  className="flex items-center gap-2 bg-slate-50 hover:bg-teal/5 px-4 py-2 rounded-xl transition-colors group"
-                >
-                  <MessageSquare size={16} className="text-slate-400 group-hover:text-teal" />
-                  <span className="text-sm font-bold text-teal">Discuss</span>
-                </button>
+                    <button 
+                      onClick={() => handleDownvote(issue.id)}
+                      disabled={userUpvotes.has(issue.id) || userDownvotes.has(issue.id)}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all group ${
+                        userDownvotes.has(issue.id) 
+                          ? 'bg-white shadow-sm text-slate-800' 
+                          : 'text-slate-400 hover:text-slate-600'
+                      }`}
+                    >
+                      <ThumbsDown size={16} className={userDownvotes.has(issue.id) ? 'fill-slate-800 text-slate-800' : 'group-hover:text-slate-600'} />
+                      <span className={`text-xs font-bold ${userDownvotes.has(issue.id) ? 'text-slate-800' : 'text-slate-400'}`}>
+                        {issue.downvotesCount || 0}
+                      </span>
+                    </button>
+                  </div>
+
+                  <button 
+                    onClick={() => toggleComments(issue.id)}
+                    className="flex items-center gap-2 bg-slate-50 hover:bg-teal/5 px-4 py-2 rounded-xl transition-colors group border border-slate-100"
+                  >
+                    <MessageSquare size={16} className="text-slate-400 group-hover:text-teal" />
+                    <span className="text-sm font-bold text-teal">Discuss</span>
+                  </button>
+                </div>
               </div>
 
               {openComments.has(issue.id) && <CommentSection issueId={issue.id} />}

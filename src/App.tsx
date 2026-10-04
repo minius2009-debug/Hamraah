@@ -28,8 +28,8 @@ const Sidebar: React.FC<{ activeTab: string; setActiveTab: (tab: string) => void
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const tabs = [
-    { id: 'home', label: 'Services', icon: Home },
-    { id: 'jobs', label: role === 'provider' ? 'My Jobs' : 'Bookings', icon: ClipboardList },
+    { id: 'home', label: role === 'provider' ? 'Gigs Feed' : 'Services', icon: Home },
+    { id: 'jobs', label: role === 'provider' ? 'Earnings' : 'Bookings', icon: ClipboardList },
     { id: 'civic', label: 'Protest', icon: Megaphone },
     { id: 'updates', label: 'Updates', icon: BellRing },
     { id: 'emergency', label: 'Emergency', icon: PhoneCall },
@@ -252,7 +252,7 @@ const AppContent: React.FC = () => {
             </AnimatePresence>
           </main>
           
-          {!selectedCategory && !isNotificationsOpen && <Navigation activeTab={activeTab} setActiveTab={setActiveTab} />}
+          {!selectedCategory && !isNotificationsOpen && <Navigation activeTab={activeTab} setActiveTab={setActiveTab} role={profile?.role} />}
         </div>
 
         {/* Right Sidebar / Ad Space / Info - Only on Large Screens */}

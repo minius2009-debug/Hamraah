@@ -72,8 +72,13 @@ export const ProfileScreen: React.FC = () => {
            alert(`AI Suggestion:\n\nBio updated!\nRecommended skills: ${data.recommendedSkills.join(', ')}`);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Optimization error:', error);
+      if (error.message?.includes('quota') || error.message?.includes('429')) {
+        alert("The AI companion is currently busy (limit reached). Please try again in a few hours.");
+      } else {
+        alert("AI optimization failed. Please check your connection.");
+      }
     } finally {
       setIsOptimizing(false);
     }
@@ -199,7 +204,7 @@ export const ProfileScreen: React.FC = () => {
             <span className="text-teal font-bold text-xs bg-gold/20 px-2 py-1 rounded-lg">Change</span>
           </button>
 
-          <button className="w-full bg-white p-4 rounded-2xl flex items-center justify-between border border-slate-100 shadow-sm active:bg-slate-50">
+          <div className="w-full bg-white p-4 rounded-2xl flex items-center justify-between border border-slate-100 shadow-sm">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-teal/10 rounded-xl flex items-center justify-center text-teal">
                 <Shield size={20} />
@@ -231,7 +236,7 @@ export const ProfileScreen: React.FC = () => {
             ) : (
               <span className="text-slate-300 font-bold text-[10px] uppercase tracking-wider">Unverified</span>
             )}
-          </button>
+          </div>
 
           <div className="pt-8 border-t border-slate-50">
             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-1">Switch Mode</h4>

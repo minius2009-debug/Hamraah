@@ -28,6 +28,8 @@ interface CivicIssue {
   status: 'posted' | 'escalated' | 'resolved';
   category: string;
   upvotesCount: number;
+  downvotesCount: number;
+  commentsCount: number;
   creatorId: string;
   createdAt: any;
 }
@@ -44,6 +46,7 @@ interface VerificationApplication {
 }
 
 export const AdminScreen: React.FC = () => {
+  const { profile, user } = useAuth();
   const [issues, setIssues] = useState<CivicIssue[]>([]);
   const [applications, setApplications] = useState<VerificationApplication[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,6 +58,11 @@ export const AdminScreen: React.FC = () => {
   ]);
 
   useEffect(() => {
+    if (profile?.role !== 'admin') {
+      setLoading(false);
+      return;
+    }
+
     // Listen to Issues
     const issuesQ = query(collection(db, 'civic_issues'), orderBy('createdAt', 'desc'));
     const unsubscribeIssues = onSnapshot(issuesQ, (snapshot) => {
@@ -139,6 +147,14 @@ export const AdminScreen: React.FC = () => {
       handleFirestoreError(err, OperationType.DELETE, `verification_applications/${id}`);
     }
   };
+
+  const sortedIssues = [...issues].sort((a, b) => {
+    const scoreA = (a.upvotesCount || 0) + (a.commentsCount || 0) * 2 - (a.downvotesCount || 0);
+    const scoreB = (b.upvotesCount || 0) + (b.commentsCount || 0) * 2 - (b.downvotesCount || 0);
+    return scoreB - scoreA;
+  });
+
+  const topFiveIds = new Set(sortedIssues.slice(0, 5).filter(i => (i.upvotesCount || 0) + (i.commentsCount || 0) > 0).map(i => i.id));
 
   if (loading) {
     return (
@@ -276,13 +292,18 @@ export const AdminScreen: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {issues.map((issue) => (
-                <tr key={issue.id} className="hover:bg-slate-50/30 transition-colors group">
+              {sortedIssues.map((issue) => (
+                <tr key={issue.id} className={`hover:bg-slate-50/30 transition-colors group ${topFiveIds.has(issue.id) ? 'bg-crimson/[0.01]' : ''}`}>
                   <td className="px-6 py-5">
                     <div className="flex items-start gap-3">
-                       <div className="w-2 h-2 mt-1.5 rounded-full bg-crimson shrink-0" />
+                       <div className={`w-2 h-2 mt-1.5 rounded-full shrink-0 ${topFiveIds.has(issue.id) ? 'bg-crimson animate-pulse' : 'bg-slate-300'}`} />
                        <div>
-                          <p className="text-sm font-bold text-teal mb-0.5 line-clamp-1">{issue.title}</p>
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <p className="text-sm font-bold text-teal line-clamp-1">{issue.title}</p>
+                            {topFiveIds.has(issue.id) && (
+                              <span className="text-[8px] font-black px-1.5 py-0.5 bg-crimson text-white rounded uppercase tracking-tighter">Office Candidate</span>
+                            )}
+                          </div>
                           <span className="text-[10px] font-black px-2 py-0.5 bg-slate-100 rounded text-slate-500 uppercase tracking-tight">
                             {issue.category}
                           </span>
@@ -291,8 +312,12 @@ export const AdminScreen: React.FC = () => {
                   </td>
                   <td className="px-6 py-5">
                     <div className="flex flex-col items-center">
-                       <span className="text-sm font-black text-emerald-500">{issue.upvotesCount}</span>
-                       <span className="text-[8px] font-bold text-slate-400 uppercase">Upvotes</span>
+                       <span className="text-sm font-black text-emerald-500">{(issue.upvotesCount || 0) + (issue.commentsCount || 0) * 2 - (issue.downvotesCount || 0)}</span>
+                       <div className="flex gap-1.5 text-[7px] font-bold text-slate-400 uppercase mt-1">
+                          <span className="text-teal">U:{issue.upvotesCount || 0}</span>
+                          <span className="text-crimson">D:{issue.downvotesCount || 0}</span>
+                          <span className="text-blue-500">C:{issue.commentsCount || 0}</span>
+                       </div>
                     </div>
                   </td>
                   <td className="px-6 py-5">

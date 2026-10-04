@@ -9,7 +9,8 @@ import {
   Activity
 } from 'lucide-react';
 import { collection, query, getDocs, where, limit, orderBy, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { useAuth } from '../context/AuthContext';
 
 interface StatsData {
   totalUsers: number;
@@ -19,6 +20,7 @@ interface StatsData {
 }
 
 export const AdminDashboardStats: React.FC = () => {
+  const { profile } = useAuth();
   const [stats, setStats] = useState<StatsData>({
     totalUsers: 0,
     activeProviders: 0,
@@ -28,6 +30,11 @@ export const AdminDashboardStats: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (profile?.role !== 'admin') {
+       setLoading(false);
+       return;
+    }
+
     // Total Users Listener
     const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
       const total = snapshot.size;
@@ -36,8 +43,18 @@ export const AdminDashboardStats: React.FC = () => {
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
       const newToday = snapshot.docs.filter(d => {
-         const createdAt = d.data().createdAt;
-         return createdAt && new Date(createdAt).getTime() >= startOfDay.getTime();
+         const data = d.data();
+         let createdAtDate: Date | null = null;
+         
+         if (data.createdAt?.toDate) {
+            createdAtDate = data.createdAt.toDate();
+         } else if (data.createdAt instanceof Date) {
+            createdAtDate = data.createdAt;
+         } else if (typeof data.createdAt === 'string') {
+            createdAtDate = new Date(data.createdAt);
+         }
+
+         return createdAtDate && createdAtDate.getTime() >= startOfDay.getTime();
       }).length;
 
       setStats(prev => ({
@@ -47,7 +64,7 @@ export const AdminDashboardStats: React.FC = () => {
         newSignupsToday: newToday
       }));
       setLoading(false);
-    });
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'users'));
 
     // Service Requests Listener
     const unsubscribeRequests = onSnapshot(collection(db, 'service_requests'), (snapshot) => {
@@ -55,7 +72,7 @@ export const AdminDashboardStats: React.FC = () => {
         ...prev,
         totalServiceRequests: snapshot.size
       }));
-    });
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'service_requests'));
 
     return () => {
       unsubscribeUsers();
