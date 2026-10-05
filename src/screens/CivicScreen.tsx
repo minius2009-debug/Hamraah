@@ -3,7 +3,7 @@ import { collection, query, orderBy, onSnapshot, addDoc, updateDoc, doc, setDoc,
 import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
-import { Megaphone, ThumbsUp, ThumbsDown, MapPin, AlertCircle, Plus, X, FileText, Sparkles, Loader2, MessageSquare, Send, Map as MapIcon, List, Navigation, Landmark, TrendingUp } from 'lucide-react';
+import { Megaphone, ThumbsUp, ThumbsDown, MapPin, AlertCircle, Plus, X, FileText, Sparkles, Loader2, MessageSquare, Send, Map as MapIcon, List, Navigation, Landmark, TrendingUp, Activity } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -34,6 +34,12 @@ interface CivicIssue {
   creatorId: string;
   lat?: number;
   lng?: number;
+  aiMetadata?: {
+    category: string;
+    urgency: 'Low' | 'Medium' | 'High' | 'Critical';
+    summary: string;
+    keywords: string[];
+  };
 }
 
 interface CivicComment {
@@ -204,42 +210,88 @@ export const CivicScreen: React.FC = () => {
   // AI State
   const [aiLoading, setAiLoading] = useState<string | null>(null);
   const [activeNotice, setActiveNotice] = useState<{ title: string; content: string } | null>(null);
+  const [isGrouping, setIsGrouping] = useState(false);
+  const [clusters, setClusters] = useState<{ name: string; issueIds: string[]; summary: string }[]>([]);
+
+  const groupIssuesWithAI = async () => {
+    setIsGrouping(true);
+    try {
+      const issueData = issues.map(i => ({ id: i.id, title: i.title, description: i.description }));
+      const response = await fetch('/api/civic/group', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ issues: issueData }),
+      });
+      const data = await response.json();
+      if (data.clusters) {
+        setClusters(data.clusters);
+      }
+    } catch (error) {
+      console.error("Grouping error:", error);
+    } finally {
+      setIsGrouping(false);
+    }
+  };
 
   useEffect(() => {
-    if (!user) {
-      setUserUpvotes(new Set());
-      return;
-    }
+    const q = query(collection(db, 'civic_issues'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      const issuesList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CivicIssue));
+      setIssues(issuesList);
+      setLoading(false);
 
-    // Listens to user's upvotes directly if we had a dedicated collection or indexed field
-    // For now, we listen to the issues and check the upvotes. 
-    // To minimize permission errors, we check if the user is authenticated first.
-    const unsubscribe = onSnapshot(collection(db, 'civic_issues'), (snapshot) => {
-      const checkInteractions = async () => {
+      if (user) {
         const upvotedIds = new Set<string>();
         const downvotedIds = new Set<string>();
-        
+
+        // Optimized: Only check interactions for the current issues
         const interactionPromises = snapshot.docs.map(async (issueDoc) => {
-          // Check upvote
-          const upvoteDoc = await getDoc(doc(db, 'civic_issues', issueDoc.id, 'upvotes', user.uid));
-          if (upvoteDoc.exists()) upvotedIds.add(issueDoc.id);
-          
-          // Check downvote
-          const downvoteDoc = await getDoc(doc(db, 'civic_issues', issueDoc.id, 'downvotes', user.uid));
-          if (downvoteDoc.exists()) downvotedIds.add(issueDoc.id);
+          try {
+            const [upvoteDoc, downvoteDoc] = await Promise.all([
+              getDoc(doc(db, 'civic_issues', issueDoc.id, 'upvotes', user.uid)),
+              getDoc(doc(db, 'civic_issues', issueDoc.id, 'downvotes', user.uid))
+            ]);
+            if (upvoteDoc.exists()) upvotedIds.add(issueDoc.id);
+            if (downvoteDoc.exists()) downvotedIds.add(issueDoc.id);
+          } catch (err) {
+            // Silently fail for individual interaction checks
+          }
         });
-        
+
         await Promise.all(interactionPromises);
         setUserUpvotes(upvotedIds);
         setUserDownvotes(downvotedIds);
-      };
-      checkInteractions();
+      }
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'civic_issues');
     });
 
     return () => unsubscribe();
   }, [user]);
+
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+
+  const analyzeIssue = async (issue: CivicIssue) => {
+    if (!user) return;
+    setAnalyzingId(issue.id);
+    try {
+      const response = await fetch('/api/civic/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: issue.title, description: issue.description }),
+      });
+      const metadata = await response.json();
+      
+      await updateDoc(doc(db, 'civic_issues', issue.id), {
+        aiMetadata: metadata,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error("Analysis error:", error);
+    } finally {
+      setAnalyzingId(null);
+    }
+  };
 
   const generateAINotice = async (issue: CivicIssue) => {
     setAiLoading(issue.id);
@@ -314,17 +366,6 @@ export const CivicScreen: React.FC = () => {
     );
   };
 
-  useEffect(() => {
-    const path = 'civic_issues';
-    const q = query(collection(db, path), orderBy('createdAt', 'desc'));
-    return onSnapshot(q, (snapshot) => {
-      setIssues(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CivicIssue)));
-      setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, path);
-    });
-  }, []);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -332,7 +373,7 @@ export const CivicScreen: React.FC = () => {
     const path = 'civic_issues';
     try {
       const issueId = doc(collection(db, path)).id;
-      await setDoc(doc(db, path, issueId), {
+      const newIssue: any = {
         id: issueId,
         creatorId: user.uid,
         title,
@@ -346,7 +387,9 @@ export const CivicScreen: React.FC = () => {
         updatedAt: serverTimestamp(),
         lat: selectedLat,
         lng: selectedLng
-      });
+      };
+      await setDoc(doc(db, path, issueId), newIssue);
+      analyzeIssue(newIssue);
       setShowForm(false);
       setTitle('');
       setDescription('');
@@ -468,6 +511,14 @@ export const CivicScreen: React.FC = () => {
               <MapIcon size={16} />
             </button>
           </div>
+          <button 
+            onClick={groupIssuesWithAI}
+            disabled={isGrouping || issues.length === 0}
+            className="flex items-center gap-2 text-xs font-bold text-teal bg-teal/5 px-3 py-2 rounded-xl border border-teal/10 hover:bg-teal/10 transition-colors disabled:opacity-50"
+          >
+            {isGrouping ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+            {clusters.length > 0 ? 'Regroup' : 'AI Cluster'}
+          </button>
         </div>
         <button 
           onClick={() => setShowForm(true)}
@@ -477,6 +528,41 @@ export const CivicScreen: React.FC = () => {
           Report Issue
         </button>
       </div>
+
+      {clusters.length > 0 && (
+        <div className="mb-8 space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <h4 className="text-xs font-black text-teal uppercase tracking-widest flex items-center gap-2">
+              <Sparkles size={14} className="text-gold" /> AI Semantic Groups
+            </h4>
+            <button onClick={() => setClusters([])} className="text-[10px] font-bold text-slate-400 hover:text-crimson">Clear</button>
+          </div>
+          <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
+            {clusters.map((cluster, idx) => (
+              <div 
+                key={idx}
+                className="min-w-[280px] bg-gold/5 border border-gold/20 rounded-[24px] p-5 shadow-sm"
+              >
+                <h5 className="font-black text-teal text-sm mb-1">{cluster.name}</h5>
+                <p className="text-[10px] text-teal/60 font-bold uppercase tracking-tighter mb-3">{cluster.issueIds.length} Linked Reports</p>
+                <p className="text-xs text-slate-600 line-clamp-3 italic mb-4 leading-relaxed">"{cluster.summary}"</p>
+                <div className="flex -space-x-2 overflow-hidden">
+                  {cluster.issueIds.slice(0, 5).map((id, i) => (
+                    <div key={id} className="w-8 h-8 rounded-full border-2 border-white bg-slate-200 flex items-center justify-center text-[8px] font-bold text-slate-400">
+                      #{i+1}
+                    </div>
+                  ))}
+                  {cluster.issueIds.length > 5 && (
+                    <div className="w-8 h-8 rounded-full border-2 border-white bg-teal/10 flex items-center justify-center text-[8px] font-bold text-teal">
+                      +{cluster.issueIds.length - 5}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center p-12">
@@ -534,9 +620,36 @@ export const CivicScreen: React.FC = () => {
                 {issue.title}
                 {topFiveIds.has(issue.id) && <TrendingUp size={16} className="text-crimson" />}
               </h4>
+              
+              {issue.aiMetadata && (
+                <div className="mb-4 flex flex-wrap gap-2">
+                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-lg border uppercase tracking-tighter ${
+                    issue.aiMetadata.urgency === 'Critical' ? 'bg-red-500 text-white border-red-600' :
+                    issue.aiMetadata.urgency === 'High' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                    'bg-blue-50 text-blue-700 border-blue-100'
+                  }`}>
+                    {issue.aiMetadata.urgency} Urgency
+                  </span>
+                  {issue.aiMetadata.keywords?.map(kw => (
+                    <span key={kw} className="text-[9px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-lg border border-slate-200">
+                      #{kw}
+                    </span>
+                  ))}
+                </div>
+              )}
+
               <p className="text-sm text-slate-600 line-clamp-3 mb-4 leading-relaxed">
                 {issue.description}
               </p>
+
+              {issue.aiMetadata && (
+                <div className="bg-gold/5 border border-gold/10 p-3 rounded-2xl mb-4">
+                  <p className="text-[10px] font-black text-teal/60 uppercase tracking-widest mb-1 flex items-center gap-1">
+                    <Sparkles size={10} /> AI Government Brief
+                  </p>
+                  <p className="text-xs text-teal/80 font-medium italic italic">"{issue.aiMetadata.summary}"</p>
+                </div>
+              )}
 
               <div className="flex flex-wrap items-center justify-between border-t border-slate-50 pt-4 gap-4">
                 <div className="flex items-center gap-3">
@@ -545,21 +658,36 @@ export const CivicScreen: React.FC = () => {
                     <span className="text-xs font-medium">{issue.category}</span>
                   </div>
                   
-                  {issue.upvotesCount >= 1 && (
-                    <button 
-                      onClick={() => generateAINotice(issue)}
-                      disabled={aiLoading === issue.id}
-                      className="flex items-center gap-2 text-xs font-bold text-teal bg-teal/5 px-3 py-2 rounded-xl border border-teal/10 hover:bg-teal/10 transition-colors"
-                    >
-                      {aiLoading === issue.id ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <Sparkles size={14} />
-                      )}
-                      Draft Notice
-                    </button>
-                  )}
-                </div>
+                    {issue.upvotesCount >= 1 && (
+                      <button 
+                        onClick={() => generateAINotice(issue)}
+                        disabled={aiLoading === issue.id}
+                        className="flex items-center gap-2 text-xs font-bold text-teal bg-teal/5 px-3 py-2 rounded-xl border border-teal/10 hover:bg-teal/10 transition-colors"
+                      >
+                        {aiLoading === issue.id ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <Sparkles size={14} />
+                        )}
+                        Draft Notice
+                      </button>
+                    )}
+
+                    {!issue.aiMetadata && (
+                      <button 
+                        onClick={() => analyzeIssue(issue)}
+                        disabled={analyzingId === issue.id}
+                        className="flex items-center gap-2 text-xs font-bold text-crimson bg-crimson/5 px-3 py-2 rounded-xl border border-crimson/10 hover:bg-crimson/10 transition-colors"
+                      >
+                        {analyzingId === issue.id ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <Activity size={14} />
+                        )}
+                        AI Analyze
+                      </button>
+                    )}
+                  </div>
                 
                 <div className="flex items-center gap-2">
                   <div className="flex bg-slate-50 rounded-2xl p-1 border border-slate-100">

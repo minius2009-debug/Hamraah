@@ -23,6 +23,7 @@ interface UserProfile {
   experience?: string;
   photoURL?: string;
   createdAt: string;
+  referralCode?: string;
   savedPlaces?: {
     home?: string;
     work?: string;
@@ -37,6 +38,7 @@ interface AuthContextType {
   login: () => Promise<void>;
   logout: () => Promise<void>;
   updateRole: (role: 'customer' | 'provider' | 'admin') => Promise<void>;
+  resetAccount: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -148,8 +150,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setProfile(null);
   };
 
+  const resetAccount = async () => {
+    localStorage.clear();
+    await signOut(auth);
+    window.location.reload();
+  };
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isLoggingIn, login, logout, updateRole }}>
+    <AuthContext.Provider value={{ user, profile, loading, isLoggingIn, login, logout, updateRole, resetAccount }}>
       {children}
     </AuthContext.Provider>
   );

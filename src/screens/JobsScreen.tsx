@@ -407,11 +407,11 @@ export const JobsScreen: React.FC = () => {
                      </div>
                    </div>
 
-                   {viewingProvider.portfolio && viewingProvider.portfolio.length > 0 && (
+                   {viewingProvider.portfolio && viewingProvider.portfolio?.length > 0 && (
                      <div>
                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest px-1 mb-3">Portfolio / Past Work</h4>
                        <div className="grid grid-cols-3 gap-2">
-                         {viewingProvider.portfolio.map((img, i) => (
+                         {viewingProvider.portfolio?.map((img, i) => (
                            <div key={i} className="aspect-square rounded-xl bg-slate-100 overflow-hidden border border-slate-200">
                              <img src={img} alt="Past work" className="w-full h-full object-cover" />
                            </div>

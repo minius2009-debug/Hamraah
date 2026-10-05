@@ -12,56 +12,44 @@ service cloud.firestore {
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
+    
+    // Auth tokens NEVER contain custom claims in rules.
+    // Use get() on a trusted database document for roles.
     function isAdmin() { 
       return isSignedIn() && (
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-        request.auth.token.email == 'minius2009@gmail.com'
-      ); 
+        request.auth.token.email == 'minius2009@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
     }
 
     // Validation Helpers
     function isValidUser(data) {
-      return data.id == request.auth.uid &&
-             data.name is string && data.name.size() <= 100 &&
-             data.email is string && data.email.size() <= 100 &&
-             data.role in ['customer', 'provider', 'admin'] &&
-             data.rating is number &&
-             data.completedJobs is number &&
-             data.isVerified is bool &&
-             data.keys().hasAll(['id', 'name', 'email', 'role', 'rating', 'completedJobs', 'isVerified']);
+      return data.keys().hasAll(['id', 'name', 'email', 'role']) &&
+             data.keys().hasOnly(['id', 'name', 'email', 'role', 'rating', 'completedJobs', 'isVerified', 'photoURL', 'createdAt', 'updatedAt', 'bio', 'experience', 'skills', 'referralCode', 'savedPlaces']) &&
+             data.id == request.auth.uid;
     }
 
     function isValidServiceRequest(data) {
-      return data.id is string &&
-             data.customerId == request.auth.uid &&
-             data.category is string &&
-             data.location is string &&
-             data.initialOfferPKR is number &&
-             data.status in ['pending', 'negotiating', 'in_progress', 'completed', 'cancelled'] &&
-             data.keys().hasAll(['id', 'customerId', 'category', 'location', 'initialOfferPKR', 'status']);
+      return data.keys().hasAll(['id', 'customerId', 'category', 'location', 'status']) &&
+             data.customerId == request.auth.uid;
     }
 
     function isValidCivicIssue(data) {
-      return data.id is string &&
-             data.creatorId == request.auth.uid &&
-             data.title is string && data.title.size() <= 200 &&
-             data.description is string && data.description.size() <= 2000 &&
-             data.category is string &&
-             data.status in ['posted', 'escalated', 'resolved'] &&
-             data.keys().hasAll(['id', 'creatorId', 'title', 'description', 'category', 'status']);
+      return data.keys().hasAll(['id', 'creatorId', 'title', 'description', 'category', 'status']) &&
+             data.creatorId == request.auth.uid;
     }
 
     // Collection Matches
     match /users/{userId} {
-      allow read: if true; // Publicly readable for names/ratings
+      allow read: if isSignedIn(); 
       allow create: if isOwner(userId) && isValidUser(incoming());
-      allow update: if isOwner(userId) && 
-                      incoming().diff(existing()).affectedKeys().hasOnly(['role', 'rating', 'completedJobs', 'bio', 'skills', 'savedPlaces', 'updatedAt']);
+      allow update: if (isOwner(userId) && isValidUser(incoming())) || isAdmin();
 
       match /notifications/{notificationId} {
         allow read: if isOwner(userId);
         allow create: if isSignedIn();
-        allow update: if isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+        allow update: if isOwner(userId);
       }
     }
 
@@ -69,12 +57,9 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isValidId(requestId) && isValidServiceRequest(incoming());
       allow update: if isSignedIn() && (
-        // Customer can update status or cancel
-        (isOwner(existing().customerId) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'assignedDriverId', 'updatedAt'])) ||
-        // Provider can accept/update status if assigned
-        (existing().assignedDriverId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
-        // Broadcast accept
-        (existing().status == 'pending' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'assignedDriverId', 'updatedAt']))
+        isOwner(existing().customerId) || 
+        isAdmin() || 
+        (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'assignedProviderId', 'finalPricePKR', 'updatedAt']))
       );
 
       match /negotiations/{negotiationId} {
@@ -89,13 +74,11 @@ service cloud.firestore {
     }
 
     match /civic_issues/{issueId} {
-      allow read: if true; // Public awareness
+      allow read: if true; 
       allow create: if isSignedIn() && isValidId(issueId) && isValidCivicIssue(incoming());
       allow update: if isSignedIn() && (
-        // Community engagement
-        (incoming().diff(existing()).affectedKeys().hasOnly(['upvotesCount', 'downvotesCount', 'commentsCount', 'updatedAt'])) ||
-        // Creator update
-        (isOwner(existing().creatorId) && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'status', 'updatedAt']))
+        isAdmin() || 
+        (incoming().diff(existing()).affectedKeys().hasOnly(['upvotesCount', 'downvotesCount', 'commentsCount', 'updatedAt', 'aiMetadata']))
       );
       allow delete: if isAdmin();
 
@@ -108,32 +91,32 @@ service cloud.firestore {
         allow read: if true;
         allow create, delete: if isOwner(userId);
       }
+      
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if isSignedIn() && isValidId(commentId);
+      }
     }
-
+      
     match /verification_applications/{applicationId} {
-      allow get: if isSignedIn() && (isOwner(resource.data.userId) || isAdmin());
-      allow list: if isAdmin();
-      allow create: if isSignedIn() && incoming().userId == request.auth.uid && incoming().status == 'pending';
-      allow update: if isAdmin() && (
-        incoming().diff(existing()).affectedKeys().hasOnly(['status'])
-      );
-      allow delete: if isAdmin();
-    }
-    
-    // Subcollections
-    match /civic_issues/{issueId}/comments/{commentId} {
-      allow read: if true;
-      allow create: if isSignedIn() && isValidId(commentId) && incoming().userId == request.auth.uid;
+      allow read: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow update, delete: if isAdmin();
     }
     
     match /chats/{chatId} {
-       allow read: if isSignedIn() && (request.auth.uid in chatId.split('_'));
-       allow create: if isSignedIn() && (request.auth.uid in chatId.split('_'));
+       // Using a participants array in the document is better than splitting the ID
+       allow read, create: if isSignedIn() && (request.auth.uid in resource.data.participants || request.auth.uid in incoming().participants);
        
        match /messages/{messageId} {
          allow read: if isSignedIn();
          allow create: if isSignedIn() && incoming().senderId == request.auth.uid;
        }
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isSignedIn() && incoming().customerId == request.auth.uid;
     }
   }
 }

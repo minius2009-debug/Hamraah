@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, orderBy, getDocs, limit, where } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { useAuth } from '../context/AuthContext';
 import { AdminDashboardStats } from '../components/AdminDashboardStats';
 
 interface CivicIssue {
@@ -100,7 +101,7 @@ export const AdminScreen: React.FC = () => {
       unsubscribeIssues();
       unsubscribeApps();
     };
-  }, []);
+  }, [profile?.role]);
 
   const handleIssueStatus = async (id: string, status: 'escalated' | 'resolved') => {
     try {

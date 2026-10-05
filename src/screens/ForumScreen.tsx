@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { db } from '../lib/firebase';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, increment, deleteDoc, getDocs } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageSquare, Plus, Send, User, Clock, Trash2, ChevronRight, MessageCircle, AlertCircle, Share2, Info } from 'lucide-react';
+import { MessageSquare, Plus, Send, User, Clock, Trash2, ChevronRight, MessageCircle, AlertCircle, Share2, Info, Loader2 } from 'lucide-react';
 
 interface Thread {
   id: string;

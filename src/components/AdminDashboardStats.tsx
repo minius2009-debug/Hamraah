@@ -78,7 +78,7 @@ export const AdminDashboardStats: React.FC = () => {
       unsubscribeUsers();
       unsubscribeRequests();
     };
-  }, []);
+  }, [profile?.role]);
 
   const metrics = [
     { label: 'Total Members', value: stats.totalUsers, icon: Users, color: 'bg-teal/10 text-teal', detail: 'Across Chitral' },

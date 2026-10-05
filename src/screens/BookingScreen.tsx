@@ -36,6 +36,92 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
   const [description, setDescription] = useState('');
   const [offer, setOffer] = useState('');
   const [isRecording, setIsRecording] = useState(false);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
+  const [isProcessingVoice, setIsProcessingVoice] = useState(false);
+  const [fareRange, setFareRange] = useState<{ min: number; recommended: number; max: number; surgeReason: string } | null>(null);
+  const [isEstimatingFare, setIsEstimatingFare] = useState(false);
+
+  // Voice Recording Logic
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      
+      recorder.ondataavailable = (e) => chunks.push(e.data);
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+        await processVoice(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+      
+      recorder.start();
+      setMediaRecorder(recorder);
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Mic access denied:", err);
+      alert("Microphone access is required for voice booking.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorder && isRecording) {
+      mediaRecorder.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const processVoice = async (blob: Blob) => {
+    setIsProcessingVoice(true);
+    try {
+      const formData = new FormData();
+      formData.append('audio', blob, 'booking.webm');
+      
+      const response = await fetch('/api/voice/process', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await response.json();
+      
+      if (data.origin) setLocation(data.origin);
+      if (data.destination) setDestination(data.destination);
+      if (data.service_type) setActiveCategory(data.service_type.toLowerCase());
+      if (data.transcription) {
+        setDescription(prev => prev ? `${prev}\n[Voice]: ${data.transcription}` : data.transcription);
+      }
+    } catch (error) {
+      console.error("Voice process error:", error);
+    } finally {
+      setIsProcessingVoice(false);
+    }
+  };
+
+  // Dynamic AI Fare Estimation
+  const estimateAIFare = async (dist: number) => {
+    setIsEstimatingFare(true);
+    try {
+      const response = await fetch('/api/fare/estimate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          distance: dist,
+          category: activeCategory,
+          timeOfDay: new Date().getHours(),
+          demandLevel: Math.random() > 0.7 ? 'High' : 'Normal', // Simulated
+          trafficLevel: 'Moderate'
+        })
+      });
+      const data = await response.json();
+      setFareRange(data);
+      setOffer(data.recommended.toString());
+    } catch (error) {
+      console.error("Fare error:", error);
+    } finally {
+      setIsEstimatingFare(false);
+    }
+  };
+
   const [locating, setLocating] = useState(false);
   const [locatingDest, setLocatingDest] = useState(false);
   
@@ -114,19 +200,7 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
       const distance = R * c;
       
       setEstimatedDistance(Number(distance.toFixed(2)));
-      
-      // Category rates
-      const rates: Record<string, number> = {
-        'taxis': 80,
-        'bikes': 30,
-        'rickshaws': 45,
-        'cars': 120,
-        'drivers': 50
-      };
-      
-      const price = distance * (rates[activeCategory] || 50);
-      setEstimatedPrice(Math.round(price));
-      if (!offer) setOffer(Math.round(price).toString());
+      estimateAIFare(distance);
     } else {
       setEstimatedDistance(null);
       setEstimatedPrice(null);
@@ -230,13 +304,24 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
       return;
     }
     
-    const randomEta = Math.floor(Math.random() * 10) + 5;
+    // 1. Calculate realistic ETA (assuming 25km/h average in rugged Chitral terrain)
+    // For simulation, we assume driver is between 1-5km away
+    const simulatedProximityKM = Number((Math.random() * 4 + 1).toFixed(1));
+    const baseEtaMinutes = Math.round((simulatedProximityKM / 25) * 60);
+    const trafficBuffer = Math.floor(Math.random() * 3);
+    const realEta = Math.max(2, baseEtaMinutes + trafficBuffer);
+
     setSelectedDriver(driver);
-    setEta(randomEta);
-    setInitialEta(randomEta);
+    setEta(realEta);
+    setInitialEta(realEta);
     setTrackingProgress(0);
     
-    // Check or Create Chat Session
+    // 2. Start Negotiation (Update Request)
+    // We assume the user already created a request and now selects a driver to negotiate with
+    // Or if they select before posting, we handle it during submit.
+    // For now, let's assume they are selecting from nearby list AFTER posting or during booking flow.
+    
+    // 3. Check or Create Chat Session
     const chatId = user.uid < driver.id ? `${user.uid}_${driver.id}` : `${driver.id}_${user.uid}`;
     setActiveChatId(chatId);
     
@@ -248,13 +333,14 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
           id: chatId,
           customerId: user.uid,
           driverId: driver.id,
+          participants: [user.uid, driver.id],
           updatedAt: serverTimestamp()
         });
         
-        // Initial Greeting
+        // Initial Greeting from Driver
         await addDoc(collection(db, 'chats', chatId, 'messages'), {
           senderId: driver.id,
-          text: `Salam! I'm nearby. Where exactly in Chitral do you want to go?`,
+          text: `Assalam-o-Alaikum! I see your request for ${categoryLabel}. I am ${simulatedProximityKM}km away. Should I come?`,
           createdAt: serverTimestamp()
         });
       }
@@ -378,6 +464,38 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
 
   return (
     <div className="min-h-screen bg-white">
+      <AnimatePresence>
+        {isRecording && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-teal/95 backdrop-blur-xl flex flex-col items-center justify-center p-8 text-center"
+          >
+            <motion.div 
+              animate={{ 
+                scale: [1, 1.2, 1],
+                boxShadow: ["0 0 0 0px rgba(255,255,255,0.4)", "0 0 0 40px rgba(255,255,255,0)", "0 0 0 0px rgba(255,255,255,0.4)"]
+              }}
+              transition={{ repeat: Infinity, duration: 1.5 }}
+              className="w-24 h-24 bg-white rounded-full flex items-center justify-center text-teal mb-8 shadow-2xl"
+            >
+              <Mic size={40} />
+            </motion.div>
+            <h3 className="text-2xl font-black text-white mb-2">Listening...</h3>
+            <p className="text-white/70 font-medium">Tell us where you want to go in Chitral.</p>
+            <p className="text-[10px] font-black text-gold uppercase tracking-[0.3em] mt-8 animate-pulse">Khowar / Urdu / English</p>
+            
+            <button 
+              onClick={stopRecording}
+              className="mt-16 bg-white/10 border border-white/20 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-white/20 transition-all"
+            >
+              Done Speaking
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <header className="sticky top-0 z-30 h-14 bg-white flex items-center px-4 gap-4">
         <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
           <ArrowLeft size={20} />
@@ -711,88 +829,139 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
           </div>
 
           {isTransport && (
-            <div className="space-y-1">
-              <div className="flex justify-between items-center px-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">To (Destination)</label>
-                <div className="flex items-center gap-2">
-                  {profile?.savedPlaces?.home && (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <div className="flex justify-between items-center px-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">To (Destination)</label>
+                  <div className="flex items-center gap-2">
+                    {profile?.savedPlaces?.home && (
+                      <button 
+                        type="button"
+                        onClick={() => setDestination(profile.savedPlaces!.home!)}
+                        className="p-1.5 bg-teal/5 text-teal rounded-lg hover:bg-teal/10 transition-colors"
+                        title="Select Home"
+                      >
+                        <Home size={12} />
+                      </button>
+                    )}
+                    {profile?.savedPlaces?.work && (
+                      <button 
+                        type="button"
+                        onClick={() => setDestination(profile.savedPlaces!.work!)}
+                        className="p-1.5 bg-teal/5 text-teal rounded-lg hover:bg-teal/10 transition-colors"
+                        title="Select Work"
+                      >
+                        <Briefcase size={12} />
+                      </button>
+                    )}
                     <button 
                       type="button"
-                      onClick={() => setDestination(profile.savedPlaces!.home!)}
-                      className="p-1.5 bg-teal/5 text-teal rounded-lg hover:bg-teal/10 transition-colors"
-                      title="Select Home"
+                      onClick={() => handleUseCurrentLocation('destination')}
+                      disabled={locatingDest}
+                      className="flex items-center gap-1 text-[10px] font-bold text-teal hover:text-crimson transition-colors disabled:opacity-50"
                     >
-                      <Home size={12} />
+                      {locatingDest ? <Loader2 size={12} className="animate-spin" /> : <Navigation size={12} />}
+                      Use My Location
                     </button>
-                  )}
-                  {profile?.savedPlaces?.work && (
-                    <button 
-                      type="button"
-                      onClick={() => setDestination(profile.savedPlaces!.work!)}
-                      className="p-1.5 bg-teal/5 text-teal rounded-lg hover:bg-teal/10 transition-colors"
-                      title="Select Work"
-                    >
-                      <Briefcase size={12} />
-                    </button>
-                  )}
-                  <button 
-                    type="button"
-                    onClick={() => handleUseCurrentLocation('destination')}
-                    disabled={locatingDest}
-                    className="flex items-center gap-1 text-[10px] font-bold text-teal hover:text-crimson transition-colors disabled:opacity-50"
-                  >
-                    {locatingDest ? <Loader2 size={12} className="animate-spin" /> : <Navigation size={12} />}
-                    Use My Location
-                  </button>
+                  </div>
+                </div>
+                <div className="relative group">
+                  <input 
+                    required
+                    value={destination}
+                    onChange={(e) => setDestination(e.target.value)}
+                    placeholder="e.g. Booni, Upper Chitral"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-12 text-sm focus:outline-none focus:ring-2 focus:ring-teal/50"
+                  />
+                  <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={18} />
+                  
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                    {destination && (
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button type="button" onClick={() => handleSavePlace('work', destination)} className="p-1.5 hover:bg-teal/5 rounded-lg text-slate-400 hover:text-teal transition-colors" title="Save as Work"><BookmarkPlus size={14} /></button>
+                      </div>
+                    )}
+                    {destination.includes('(') && (
+                      <div className="flex items-center gap-1 text-[8px] font-black text-emerald-500 bg-emerald-50 px-2 py-1 rounded-full uppercase">
+                        <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse" />
+                        GPS Locked
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-              <div className="relative group">
-                <input 
-                  required
-                  value={destination}
-                  onChange={(e) => setDestination(e.target.value)}
-                  placeholder="e.g. Booni, Upper Chitral"
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-12 text-sm focus:outline-none focus:ring-2 focus:ring-teal/50"
-                />
-                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={18} />
-                
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                  {destination && (
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button type="button" onClick={() => handleSavePlace('work', destination)} className="p-1.5 hover:bg-teal/5 rounded-lg text-slate-400 hover:text-teal transition-colors" title="Save as Work"><BookmarkPlus size={14} /></button>
-                    </div>
-                  )}
-                  {destination.includes('(') && (
-                    <div className="flex items-center gap-1 text-[8px] font-black text-emerald-500 bg-emerald-50 px-2 py-1 rounded-full uppercase">
-                      <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse" />
-                      GPS Locked
-                    </div>
-                  )}
-                </div>
-              </div>
+
+              <motion.button 
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                type="button"
+                onMouseDown={startRecording}
+                onMouseUp={stopRecording}
+                onTouchStart={startRecording}
+                onTouchEnd={stopRecording}
+                className={`w-full flex items-center justify-center gap-3 py-4 rounded-[24px] font-black text-xs uppercase tracking-widest transition-all shadow-lg ${
+                  isRecording 
+                    ? 'bg-crimson text-white shadow-crimson/30' 
+                    : 'bg-gold text-teal hover:shadow-gold/20'
+                }`}
+              >
+                {isProcessingVoice ? (
+                  <Loader2 size={18} className="animate-spin" />
+                ) : (
+                  <Mic size={18} />
+                )}
+                {isRecording ? 'Listening for Khowar/Urdu...' : 'Hold to Speak Booking'}
+              </motion.button>
             </div>
           )}
 
-          {isTransport && estimatedPrice !== null && (
+          {isTransport && (fareRange || isEstimatingFare) && (
             <motion.div 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="bg-teal text-white p-4 rounded-[28px] shadow-lg shadow-teal/20 flex items-center justify-between overflow-hidden relative"
+              className="bg-teal text-white p-6 rounded-[32px] shadow-xl shadow-teal/20 flex flex-col gap-4 overflow-hidden relative"
             >
-              <div className="absolute top-0 right-0 -mr-8 -mt-8 w-24 h-24 bg-white/5 rounded-full blur-2xl" />
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-md">
-                  <Banknote size={20} className="text-gold" />
+              <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 bg-white/5 rounded-full blur-2xl" />
+              <div className="flex items-center justify-between relative z-10">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-md">
+                    <Banknote size={20} className="text-gold" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] opacity-70 font-black uppercase tracking-widest leading-none mb-1">AI Fare Estimate</p>
+                    {isEstimatingFare ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <p className="text-2xl font-black leading-none">PKR {fareRange?.recommended}</p>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <p className="text-[10px] opacity-70 font-black uppercase tracking-widest leading-none mb-1">Estimated Fare</p>
-                  <p className="text-xl font-black leading-none">PKR {estimatedPrice}</p>
+                <div className="text-right">
+                  <p className="text-[10px] opacity-70 font-black uppercase tracking-widest leading-none mb-1">Distance</p>
+                  <p className="text-sm font-bold text-gold leading-none">{estimatedDistance} KM</p>
                 </div>
               </div>
-              <div className="text-right">
-                <p className="text-[10px] opacity-70 font-black uppercase tracking-widest leading-none mb-1">Distance</p>
-                <p className="text-sm font-bold text-gold leading-none">{estimatedDistance} KM</p>
-              </div>
+
+              {!isEstimatingFare && fareRange && (
+                <div className="flex flex-col gap-3 pt-3 border-t border-white/10 relative z-10">
+                  <div className="flex justify-between items-center bg-white/5 p-3 rounded-2xl">
+                    <span className="text-[10px] font-bold uppercase opacity-60">Negotiation Range</span>
+                    <div className="flex gap-4">
+                      <div className="text-center">
+                        <p className="text-[8px] opacity-50 uppercase font-black">Min</p>
+                        <p className="text-xs font-bold text-emerald-400">{fareRange.min}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[8px] opacity-50 uppercase font-black">Max</p>
+                        <p className="text-xs font-bold text-crimson">{fareRange.max}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-[10px] italic opacity-80 flex items-center gap-2">
+                    <Info size={12} /> {fareRange.surgeReason}
+                  </p>
+                </div>
+              )}
             </motion.div>
           )}
 
@@ -810,10 +979,20 @@ export const BookingScreen: React.FC<BookingScreenProps> = ({ categoryId, onBack
                 />
                 <button 
                   type="button"
-                  onClick={() => setIsRecording(!isRecording)}
-                  className={`absolute right-4 bottom-4 p-3 rounded-full transition-all ${isRecording ? 'bg-crimson text-white animate-pulse' : 'bg-gold text-teal shadow-md'}`}
+                  onMouseDown={startRecording}
+                  onMouseUp={stopRecording}
+                  onTouchStart={startRecording}
+                  onTouchEnd={stopRecording}
+                  className={`absolute right-4 bottom-4 p-3 rounded-full transition-all ${isRecording ? 'bg-crimson text-white scale-110 shadow-xl shadow-crimson/50' : 'bg-gold text-teal shadow-md'}`}
                 >
-                  <Mic size={20} />
+                  {isProcessingVoice ? <Loader2 size={20} className="animate-spin" /> : <Mic size={20} />}
+                  {isRecording && (
+                    <motion.div 
+                      className="absolute inset-0 rounded-full bg-crimson"
+                      animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
+                      transition={{ repeat: Infinity, duration: 1.5 }}
+                    />
+                  )}
                 </button>
               </div>
               <p className="text-[10px] text-slate-400 px-1">Tip: You can use voice note if you prefer not to type.</p>

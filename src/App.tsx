@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider } from './context/AuthContext';
+import { LanguageProvider } from './context/LanguageContext';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
 import { HomeScreen } from './screens/HomeScreen';
@@ -106,7 +107,9 @@ const Sidebar: React.FC<{ activeTab: string; setActiveTab: (tab: string) => void
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <LanguageProvider>
+        <AppContent />
+      </LanguageProvider>
     </AuthProvider>
   );
 }
@@ -146,10 +149,6 @@ const AppContent: React.FC = () => {
           queryText={searchQuery} 
           onSelectCategory={(id) => {
             setSelectedCategory(id);
-            setSearchQuery('');
-          }}
-          onSelectIssue={(id) => {
-            setActiveTab('civic');
             setSearchQuery('');
           }}
         />
